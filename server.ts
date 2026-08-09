@@ -12,7 +12,7 @@ const requireFunc = typeof require !== 'undefined'
   : createRequire(import.meta.url);
 const pdfParse = requireFunc('pdf-parse');
 
-dotenv.config();
+dotenv.config({ path: ['.env.local', '.env'] });
 
 const app = express();
 const port = 3000;
