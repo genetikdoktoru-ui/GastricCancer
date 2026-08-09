@@ -1,0 +1,7 @@
+<xml xmlns:o="urn:schemas-microsoft-com:office:office">
+ <o:MainFile HRef="mide1-2.satirlar.htm"/>
+ <o:File HRef="mide1-2.satirlar_stylesheet.css"/>
+ <o:File HRef="mide1-2.satirlar_tabstrip.htm"/>
+ <o:File HRef="mide1-2.satirlar_sheet001.htm"/>
+ <o:File HRef="mide1-2.satirlar_filelist.xml"/>
+</xml>

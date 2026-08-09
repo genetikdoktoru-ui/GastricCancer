@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // Admin check
+    function isAdmin() {
+      return get(/databases/$(database)/documents/user_roles/$(request.auth.token.email)).data.role == 'admin'
+        || request.auth.token.email == 'admin-system@gastrogen.local'
+        || request.auth.token.email == 'admin@admin.com'
+        || request.auth.token.email == 'admin@gastrogen.local';
+    }
+    
+    // Owner check
+    function isOwner() {
+      return resource.data.createdBy == request.auth.token.email;
+    }
+    
+    // Create check
+    function willBeOwner() {
+      return request.resource.data.createdBy == request.auth.token.email;
+    }
+
+    match /system_users/{username} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /user_roles/{email} {
+      allow read: if request.auth.token.email == email || isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    match /patients/{document} {
+      allow read: if isAdmin() || isOwner();
+      allow create: if isAdmin() || willBeOwner();
+      allow update, delete: if isAdmin() || isOwner();
+    }
+    
+    match /patient_identities/{document} {
+      allow read: if isAdmin() || isOwner();
+      allow create: if isAdmin() || willBeOwner();
+      allow update, delete: if isAdmin() || isOwner();
+    }
+    
+    match /form_schemas/{document} {
+      allow read, write: if isAdmin();
+      allow read: if true; 
+    }
+    
+    match /audit_logs/{document} {
+      allow read: if isAdmin();
+      allow create: if true;
+    }
+    
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
