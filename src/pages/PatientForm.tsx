@@ -9,6 +9,22 @@ import { logAudit } from '../lib/audit';
 import { generateNextResearchId } from '../lib/idGenerator';
 import { getGeminiHeaders } from '../lib/gemini-config';
 
+// Renders *flagged text* segments (used in the pathology report field to mark
+// values that don't match the corresponding structured field) as highlighted spans.
+function renderAnnotatedText(text: string) {
+  const parts = text.split(/(\*[^*]+\*)/g);
+  return parts.map((part, i) => {
+    if (part.length > 2 && part.startsWith('*') && part.endsWith('*')) {
+      return (
+        <em key={i} className="italic font-semibold text-amber-700 bg-amber-100/80 px-1 rounded">
+          {part.slice(1, -1)}
+        </em>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 export function PatientForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -1155,6 +1171,12 @@ export function PatientForm() {
                           {field.label}
                         </label>
                       </div>
+                    </div>
+                  )}
+
+                  {field.type === 'textarea' && field.id === 'rapor' && formData[field.id] && (
+                    <div className="p-3.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 whitespace-pre-wrap leading-relaxed mb-2">
+                      {renderAnnotatedText(formData[field.id])}
                     </div>
                   )}
 
