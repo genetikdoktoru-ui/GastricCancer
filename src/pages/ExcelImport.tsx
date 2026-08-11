@@ -40,6 +40,27 @@ function indexToColLetter(index: number): string {
   return letter;
 }
 
+// Excel cell comments/notes often carry the real variable codebook (e.g. "1: Yok, 2: Var"),
+// but also revision-history noise ("======", "ID#...", "Yazar   (2022-01-07 ...)"). Strip that
+// noise and keep just the actual codebook/description lines.
+function extractCommentCodebook(cell: XLSX.CellObject | undefined): string {
+  const comments = (cell as any)?.c as { t?: string }[] | undefined;
+  if (!comments || !comments.length) return '';
+  const raw = comments.map((c) => c.t || '').join('\n');
+  const kept = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (/^=+$/.test(line) || /^-+$/.test(line)) return false;
+      if (/^ID#/.test(line)) return false;
+      if (/\(\d{4}-\d{2}-\d{2}/.test(line)) return false; // "Yazar   (2022-01-07 05:49:58)"
+      if (/^[^:]+:$/.test(line)) return false; // bare "Süleyman Atalay:" author signature
+      return true;
+    });
+  return kept.join(' | ');
+}
+
 // Helper to normalize string to safe field ID
 function textToFieldId(text: string, colIndex: number): string {
   if (!text || !text.trim()) {
@@ -290,8 +311,15 @@ export function ExcelImport() {
       const cellR2 = worksheet[XLSX.utils.encode_cell({ r: 1, c })];
       const expl1 = cellR1 && cellR1.v ? String(cellR1.v).trim() : '';
       const expl2 = cellR2 && cellR2.v ? String(cellR2.v).trim() : '';
-      
+
       let explanation = [expl1, expl2].filter(Boolean).join(' | ');
+
+      // The real variable codebook (e.g. "1: Yok, 2: Var") is usually attached as an Excel
+      // cell *comment/note* on the header cell, not as plain text in a row. Pull it in too.
+      const commentText = extractCommentCodebook(cell) || extractCommentCodebook(cellR1) || extractCommentCodebook(cellR2);
+      if (commentText) {
+        explanation = explanation ? `${explanation} | ${commentText}` : commentText;
+      }
 
       // Codebook fallback mapping for known columns in mide Excel
       if (colLetter === 'M' && (!explanation || explanation.length < 5)) {
@@ -394,7 +422,7 @@ export function ExcelImport() {
         } else {
           updatedFields.push({
             id: h.fieldId,
-            label: `(${h.colLetter}) ${h.title}`,
+            label: explText,
             type: 'text',
             category: 'Excel İçe Aktarılan Değişkenler (B-DZ)',
             active: true
