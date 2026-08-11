@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build --outDir dist/client && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:functions": "esbuild src/server/app.ts --bundle --platform=node --format=cjs --packages=external --outfile=functions/lib/app.cjs",
     "start": "node dist/server.cjs",
     "preview": "NODE_ENV=production node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist server.js functions/lib",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

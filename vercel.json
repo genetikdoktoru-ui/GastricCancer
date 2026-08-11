@@ -1,8 +1,0 @@
-{
-  "buildCommand": "vite build --outDir dist/client",
-  "outputDirectory": "dist/client",
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}

@@ -1,0 +1,18 @@
+{
+  "name": "functions",
+  "description": "GastroGen API (Express) as a Firebase Cloud Function",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.0.1",
+    "express": "^4.21.2",
+    "@google/genai": "^2.4.0",
+    "dotenv": "^17.2.3",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5"
+  }
+}
