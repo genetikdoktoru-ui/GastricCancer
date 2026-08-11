@@ -424,7 +424,7 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
     2. Filtre kurallarında "fieldId", "operator", "value" ve "logicalOp" alanlarını kullan.
        - "fieldId": Yukarıdaki listedeki geçerli bir id olmalı (örn: "patient_age", "cdh1_germline", "lauren_classification", "her2_status", "cldn182", "msi_status", "h_pylori", "blood_type", "m_stage", "family_gc", "consanguinity" vb.).
        - "operator": Şu değerlerden biri olmalı: "equals", "not_equals", "contains", "not_contains", "greater_than", "less_than", "is_filled", "is_empty", "in_list".
-       - "value": Aranacak değer (metin, sayı veya seçenek metni; örn "Patonejik (Pozitif)", "Diffüz", "50", "Pozitif", "M1").
+       - "value": Aranacak değer (metin, sayı veya seçenek metni; örn "Patojenik (Pozitif)", "Diffüz", "50", "Pozitif", "M1").
        - "logicalOp": "AND" veya "OR".
     3. Doktorun sorgusuna tıbbi ve klinik açıdan kısa, net bir uzman açıklaması ("explanation") ve tıbbi genetik değerlendirme notu ("clinicalInsight") ekle.
 
@@ -442,7 +442,7 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
         {
           "fieldId": "cdh1_germline",
           "operator": "equals",
-          "value": "Patonejik (Pozitif)",
+          "value": "Patojenik (Pozitif)",
           "logicalOp": "AND"
         }
       ]
