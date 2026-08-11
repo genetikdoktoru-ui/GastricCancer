@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
+functions/lib/
+functions/node_modules/
 *.local
 
 # Env files
