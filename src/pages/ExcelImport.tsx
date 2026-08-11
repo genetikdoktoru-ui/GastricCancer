@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc, collection, doc as firestoreDoc, writeBatch } from
 import { db, auth } from '../lib/firebase';
 import { defaultFormFields, FormField } from '../lib/schema';
 import { normalizePatientRecord } from '../lib/codebook';
+import { readWorkbookFromBuffer } from '../lib/excelEncoding';
 import { logAudit } from '../lib/audit';
 import { 
   signInWithGoogleDrive, 
@@ -44,9 +45,19 @@ function textToFieldId(text: string, colIndex: number): string {
   if (!text || !text.trim()) {
     return `col_${indexToColLetter(colIndex).toLowerCase()}`;
   }
+  // Turkish uppercase letters must be folded to ASCII *before* a plain .toLowerCase():
+  // JS's locale-independent toLowerCase() turns 'İ' into 'i' + a combining dot above
+  // (U+0307), not a plain 'i', which then survives as a stray '_' in the id below.
   const str = text
-    .toLowerCase()
     .trim()
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'i')
+    .replace(/Ğ/g, 'g')
+    .replace(/Ü/g, 'u')
+    .replace(/Ş/g, 's')
+    .replace(/Ö/g, 'o')
+    .replace(/Ç/g, 'c')
+    .toLowerCase()
     .replace(/ğ/g, 'g')
     .replace(/ü/g, 'u')
     .replace(/ş/g, 's')
@@ -145,9 +156,8 @@ export function ExcelImport() {
 
     try {
       const { arrayBuffer } = await downloadDriveFileAsArrayBuffer(item.id, item.mimeType, token);
-      const data = new Uint8Array(arrayBuffer);
-      const wb = XLSX.read(data, { type: 'array', cellDates: true });
-      
+      const wb = readWorkbookFromBuffer(arrayBuffer, item.name, item.mimeType);
+
       const pseudoFile = new File([arrayBuffer], item.name, { type: item.mimeType });
       setFile(pseudoFile);
       setWorkbook(wb);
@@ -198,10 +208,8 @@ export function ExcelImport() {
     try {
       const meta = await getDriveFileMetadata(fileId, token);
       const { arrayBuffer } = await downloadDriveFileAsArrayBuffer(fileId, meta.mimeType || 'application/vnd.google-apps.spreadsheet', token);
-      
-      const data = new Uint8Array(arrayBuffer);
-      const wb = XLSX.read(data, { type: 'array', cellDates: true });
-      
+      const wb = readWorkbookFromBuffer(arrayBuffer, meta.name || 'Google_Drive_File.xlsx', meta.mimeType);
+
       const pseudoFile = new File([arrayBuffer], meta.name || 'Google_Drive_File.xlsx');
       setFile(pseudoFile);
       setWorkbook(wb);
@@ -235,8 +243,8 @@ export function ExcelImport() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+        const arrayBuffer = evt.target?.result as ArrayBuffer;
+        const wb = readWorkbookFromBuffer(arrayBuffer, uploadedFile.name, uploadedFile.type);
         setWorkbook(wb);
         setSheetNames(wb.SheetNames);
         if (wb.SheetNames.length > 0) {
