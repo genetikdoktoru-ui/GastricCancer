@@ -278,7 +278,7 @@ export function PatientAnalytics() {
         setRules([
           { id: '1', fieldId: 'lauren_classification', operator: 'equals', value: 'Diffüz', logicalOp: 'AND' },
           { id: '2', fieldId: 'patient_age', operator: 'less_than', value: '50', logicalOp: 'OR' },
-          { id: '3', fieldId: 'cdh1_germline', operator: 'equals', value: 'Patonejik (Pozitif)', logicalOp: 'OR' }
+          { id: '3', fieldId: 'cdh1_germline', operator: 'equals', value: 'Patojenik (Pozitif)', logicalOp: 'OR' }
         ]);
         break;
       case 'target':
@@ -303,7 +303,7 @@ export function PatientAnalytics() {
       case 'lynch':
         setRules([
           { id: '1', fieldId: 'suspected_syndrome', operator: 'contains', value: 'Lynch', logicalOp: 'AND' },
-          { id: '2', fieldId: 'mmr_germline', operator: 'contains', value: 'Patonejik', logicalOp: 'OR' }
+          { id: '2', fieldId: 'mmr_germline', operator: 'contains', value: 'Patojenik', logicalOp: 'OR' }
         ]);
         break;
       case 'stage4':
@@ -437,7 +437,7 @@ export function PatientAnalytics() {
     const avgAge = ages.length > 0 ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : 0;
 
     const her2Count = cohort.filter(p => String(p.her2_status || '').toLowerCase().includes('pozitif')).length;
-    const cdh1Count = cohort.filter(p => String(p.cdh1_germline || '').toLowerCase().includes('patonejik')).length;
+    const cdh1Count = cohort.filter(p => String(p.cdh1_germline || '').toLowerCase().includes('patojenik')).length;
     const msiCount = cohort.filter(p => String(p.msi_status || '').toLowerCase().includes('msi-h')).length;
     const cldnCount = cohort.filter(p => String(p.cldn182 || '').toLowerCase().includes('pozitif')).length;
     const hpyloriCount = cohort.filter(p => String(p.h_pylori || '').toLowerCase().includes('pozitif')).length;
@@ -466,7 +466,7 @@ export function PatientAnalytics() {
 
     const her2Pos = filteredPatients.filter(p => String(p.her2_status || '').toLowerCase().includes('pozitif')).length;
     const msiHPos = filteredPatients.filter(p => String(p.msi_status || '').toLowerCase().includes('msi-h')).length;
-    const cdh1Pos = filteredPatients.filter(p => String(p.cdh1_germline || '').toLowerCase().includes('patonejik')).length;
+    const cdh1Pos = filteredPatients.filter(p => String(p.cdh1_germline || '').toLowerCase().includes('patojenik')).length;
     const cldnPos = filteredPatients.filter(p => String(p.cldn182 || '').toLowerCase().includes('pozitif')).length;
     const diffuseCount = filteredPatients.filter(p => String(p.lauren_classification || '').toLowerCase().includes('diffüz')).length;
 
@@ -1009,7 +1009,7 @@ export function PatientAnalytics() {
                           <div className="flex flex-wrap gap-1">
                             {patient.cdh1_germline && (
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                String(patient.cdh1_germline).includes('Patonejik')
+                                String(patient.cdh1_germline).includes('Patojenik')
                                   ? 'bg-red-100 text-red-800 border border-red-200'
                                   : 'bg-slate-100 text-slate-600'
                               }`}>
