@@ -8,6 +8,9 @@ functions/lib/
 functions/node_modules/
 *.local
 
+# Firebase CLI local cache
+.firebase/
+
 # Env files
 .env
 .env.local
