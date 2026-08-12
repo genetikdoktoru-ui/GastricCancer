@@ -22,7 +22,7 @@ export function FormBuilder() {
           const mergedFields = dbFields.map((field: any) => {
             const df = defaultFormFields.find(d => d.id === field.id);
             if (df) {
-              return { ...field, label: df.label, type: df.type, options: df.options };
+              return { ...field, label: df.label, type: df.type, options: df.options, description: df.description, category: df.category, dependsOn: df.dependsOn };
             }
             return field;
           });
