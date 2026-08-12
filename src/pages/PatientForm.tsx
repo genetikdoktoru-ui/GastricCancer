@@ -4,7 +4,7 @@ import { defaultFormFields, FormField } from '../lib/schema';
 import { normalizePatientRecord, normalizeFieldValue } from '../lib/codebook';
 import { collection, doc, getDoc, setDoc, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Mic, Square, Loader2, Info, Image as ImageIcon, Upload, CheckCircle2, ShieldCheck, UserCheck, Link as LinkIcon, Clipboard, Globe, Sparkles, X, FileSpreadsheet, FileText, FileUp, Eye, EyeOff, Filter } from 'lucide-react';
+import { Mic, Square, Loader2, Info, Image as ImageIcon, Upload, CheckCircle2, ShieldCheck, UserCheck, Link as LinkIcon, Clipboard, Globe, Sparkles, X, FileSpreadsheet, FileText, FileUp, Eye, EyeOff, Filter, Dna, Stethoscope } from 'lucide-react';
 import { logAudit } from '../lib/audit';
 import { generateNextResearchId } from '../lib/idGenerator';
 import { getGeminiHeaders } from '../lib/gemini-config';
@@ -23,6 +23,49 @@ function renderAnnotatedText(text: string) {
     }
     return <span key={i}>{part}</span>;
   });
+}
+
+// Groups form categories into two broad visual sections so genetics-related
+// categories stay compact and adjacent, separate from the clinical/pathology cluster.
+const GENETICS_SECTION = 'Tıbbi Genetik Değerlendirmesi';
+const CLINICAL_SECTION = 'Klinik, Patolojik ve Onkolojik Veriler';
+const CATEGORY_SECTION: Record<string, string> = {
+  'Konsanguinite ve Aile Kökeni': GENETICS_SECTION,
+  'Kişisel Tıbbi Öykü': GENETICS_SECTION,
+  'Aile Hikayesi (Kanser Türüne Göre)': GENETICS_SECTION,
+  'Dismorfik Muayene Bulguları': GENETICS_SECTION,
+  'Sendrom Şüphesi ve Germline Test': GENETICS_SECTION,
+  'Demografik & Yaşam Tarzı': CLINICAL_SECTION,
+  'Tümör Patolojisi & Evreleme': CLINICAL_SECTION,
+  'Moleküler Belirteçler': CLINICAL_SECTION,
+  'Cerrahi & Tedavi': CLINICAL_SECTION,
+  'Metastatik Tedavi': CLINICAL_SECTION,
+  'Klinik Sonuçlar': CLINICAL_SECTION,
+  'İkinci Patoloji Değerlendirmesi (Kontrol)': CLINICAL_SECTION,
+  'Ameliyat Sonrası Takip': CLINICAL_SECTION,
+  'Dosya ve Rapor Bilgileri': CLINICAL_SECTION,
+};
+function sectionFor(category: string): string | null {
+  return CATEGORY_SECTION[category] || null;
+}
+
+// Small click-to-toggle info button shown next to a field's label when it has
+// a `description` — expands an inline note explaining the biomarker/variable's
+// clinical significance, instead of a floating tooltip (more robust inside grids).
+function FieldInfoButton({ fieldId, description, open, onToggle }: { fieldId: string; description: string; open: boolean; onToggle: (id: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(fieldId)}
+      className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
+        open ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+      }`}
+      title="Klinik önemini göster"
+      aria-label="Klinik önemini göster"
+    >
+      <Info className="w-3.5 h-3.5" />
+    </button>
+  );
 }
 
 export function PatientForm() {
@@ -52,6 +95,8 @@ export function PatientForm() {
   const [inputUrl, setInputUrl] = useState('');
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [pasteAreaText, setPasteAreaText] = useState('');
+  const [openInfoId, setOpenInfoId] = useState<string | null>(null);
+  const toggleInfo = (fieldId: string) => setOpenInfoId(prev => (prev === fieldId ? null : fieldId));
   
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<BlobPart[]>([]);
@@ -72,13 +117,18 @@ export function PatientForm() {
         } catch(e) {}
 
         if (schemaSnap.exists()) {
-          activeFields = schemaSnap.data().fields.map((field: any) => {
+          const storedFields = schemaSnap.data().fields as any[];
+          const merged = storedFields.map((field: any) => {
             const df = defaultFormFields.find(d => d.id === field.id);
             if (df) {
               return { ...field, label: df.label, type: df.type, options: df.options };
             }
             return field;
           });
+          // Include any newly-added schema.ts fields not yet present in the stored config
+          const storedIds = new Set(storedFields.map((f: any) => f.id));
+          const newlyAdded = defaultFormFields.filter(d => !storedIds.has(d.id));
+          activeFields = [...merged, ...newlyAdded];
         }
         // Filter only active fields
         const visibleFields = activeFields.filter((f: FormField) => f.active);
@@ -1136,13 +1186,18 @@ export function PatientForm() {
               Tüm Form Alanlarını Göster
             </button>
           </div>
-        ) : (
-          Object.entries(groupedFields).map(([category, catFields]) => (
+        ) : (() => {
+          const categoryEntries = Object.entries(groupedFields);
+          const ungrouped = categoryEntries.filter(([category]) => !sectionFor(category));
+          const geneticsEntries = categoryEntries.filter(([category]) => sectionFor(category) === GENETICS_SECTION);
+          const clinicalEntries = categoryEntries.filter(([category]) => sectionFor(category) === CLINICAL_SECTION);
+
+          const renderCategoryCard = ([category, catFields]: [string, any[]]) => (
           <div key={category} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
               <h2 className="text-lg font-semibold text-slate-800">{category}</h2>
             </div>
-            
+
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
               {(catFields as any[]).map(field => (
                 <div 
@@ -1156,6 +1211,9 @@ export function PatientForm() {
                       <label htmlFor={field.id} className="block text-sm font-semibold text-slate-800 flex items-center gap-1.5 cursor-pointer">
                         {field.label}
                       </label>
+                      {field.description && (
+                        <FieldInfoButton fieldId={field.id} description={field.description} open={openInfoId === field.id} onToggle={toggleInfo} />
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center justify-between gap-2">
@@ -1171,6 +1229,15 @@ export function PatientForm() {
                           {field.label}
                         </label>
                       </div>
+                      {field.description && (
+                        <FieldInfoButton fieldId={field.id} description={field.description} open={openInfoId === field.id} onToggle={toggleInfo} />
+                      )}
+                    </div>
+                  )}
+
+                  {field.description && openInfoId === field.id && (
+                    <div className="text-xs leading-relaxed text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+                      {field.description}
                     </div>
                   )}
 
@@ -1287,12 +1354,52 @@ export function PatientForm() {
                     </div>
                   )}
 
-                  {/* Inline description notice always visible underneath the field */}
                 </div>
               ))}
             </div>
           </div>
-        )))}
+          );
+
+          return (
+            <>
+              {ungrouped.map(renderCategoryCard)}
+
+              {geneticsEntries.length > 0 && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 px-1">
+                    <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg shrink-0">
+                      <Dna className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-indigo-900">{GENETICS_SECTION}</h2>
+                      <p className="text-xs text-indigo-600">Konsanguinite, aile öyküsü, dismorfik bulgular ve germline test sonuçları</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                    {geneticsEntries.map(renderCategoryCard)}
+                  </div>
+                </div>
+              )}
+
+              {clinicalEntries.length > 0 && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 px-1">
+                    <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
+                      <Stethoscope className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-emerald-900">{CLINICAL_SECTION}</h2>
+                      <p className="text-xs text-emerald-600">Patoloji, cerrahi, onkolojik tedavi ve takip verileri</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                    {clinicalEntries.map(renderCategoryCard)}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <div className="flex justify-end pt-4">
           <button
