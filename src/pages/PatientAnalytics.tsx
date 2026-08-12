@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { defaultFormFields, FormField } from '../lib/schema';
+import { normalizePatientRecord } from '../lib/codebook';
 import { getCurrentUserRole } from '../lib/auth-helpers';
 import { getGeminiHeaders } from '../lib/gemini-config';
 import { logAudit } from '../lib/audit';
@@ -34,10 +35,53 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+// Standard normal CDF (Abramowitz-Stegun approximation), used to derive p-values
+// for the chi-square (df=1) and z-test significance checks in the cohort comparison.
+function normalCDF(z: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  if (z > 0) p = 1 - p;
+  return p;
+}
+
+// Two-proportion comparison via a Yates-corrected 2x2 chi-square test.
+// (a,b) = positive/negative counts in group A; (c,d) = positive/negative counts in group B.
+function chiSquare2x2(a: number, b: number, c: number, d: number): number | null {
+  const n = a + b + c + d;
+  const row1 = a + b, row2 = c + d, col1 = a + c, col2 = b + d;
+  if (n === 0 || row1 === 0 || row2 === 0 || col1 === 0 || col2 === 0) return null;
+  const expected = [(row1 * col1) / n, (row1 * col2) / n, (row2 * col1) / n, (row2 * col2) / n];
+  const observed = [a, b, c, d];
+  let chi2 = 0;
+  for (let i = 0; i < 4; i++) {
+    const diff = Math.max(0, Math.abs(observed[i] - expected[i]) - 0.5); // Yates continuity correction
+    chi2 += (diff * diff) / expected[i];
+  }
+  return 2 * (1 - normalCDF(Math.sqrt(chi2)));
+}
+
+// Two-sample z-test for a difference in means (Welch-style standard error).
+// Treated as approximate (not a full t-distribution) — adequate for a quick
+// in-app significance check; small cohorts should be confirmed with formal stats.
+function twoSampleZTestMeans(mean1: number, sd1: number, n1: number, mean2: number, sd2: number, n2: number): number | null {
+  if (n1 < 2 || n2 < 2) return null;
+  const se = Math.sqrt((sd1 * sd1) / n1 + (sd2 * sd2) / n2);
+  if (se === 0) return null;
+  return 2 * (1 - normalCDF(Math.abs(mean1 - mean2) / se));
+}
+
+function stdDev(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((a, v) => a + (v - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+}
+
 export interface FilterRule {
   id: string;
   fieldId: string;
-  operator: 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'is_filled' | 'is_empty' | 'in_list';
+  operator: 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'between' | 'is_filled' | 'is_empty';
   value: string;
   logicalOp: 'AND' | 'OR';
 }
@@ -110,7 +154,10 @@ export function PatientAnalytics() {
         q = query(collection(db, 'patients'), where('createdBy', '==', auth.currentUser.email));
       }
       const snap = await getDocs(q);
-      const data = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      // Normalize so raw legacy numeric codes (e.g. grade stored as "2") read the
+      // same human-readable values ("2 - Grade 2") that filter/comparison dropdowns
+      // and options lists use — otherwise those rules never match.
+      const data = snap.docs.map(d => normalizePatientRecord({ id: d.id, ...(d.data() as any) }));
       setPatients(data);
 
       logAudit('GÖRÜNTÜLEME', 'ANALİZ_VE_SORGULAMA', 'Genel', 'Hasta analiz ve sorgu sayfası açıldı');
@@ -205,6 +252,15 @@ export function PatientAnalytics() {
     }
 
     if (val === undefined || val === null || val === '') return false;
+
+    if (rule.operator === 'between') {
+      const pNum = Number(val);
+      const [minStr, maxStr] = rule.value.split(',');
+      const minNum = Number(minStr);
+      const maxNum = Number(maxStr);
+      if (isNaN(pNum) || isNaN(minNum) || isNaN(maxNum)) return false;
+      return pNum >= minNum && pNum <= maxNum;
+    }
 
     // Numerical evaluation
     if (!isNaN(Number(val)) && !isNaN(Number(rule.value))) {
@@ -432,9 +488,9 @@ export function PatientAnalytics() {
   }, [patients, groupAField, groupBVal]);
 
   const calcCohortStats = (cohort: any[]) => {
-    if (cohort.length === 0) return { count: 0, avgAge: 0, her2Rate: 0, cdh1Rate: 0, msiRate: 0, cldnRate: 0, hpyloriRate: 0, stage4Rate: 0 };
     const ages = cohort.map(p => Number(p.patient_age)).filter(a => !isNaN(a) && a > 0);
     const avgAge = ages.length > 0 ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : 0;
+    const ageSD = stdDev(ages);
 
     const her2Count = cohort.filter(p => String(p.her2_status || '').toLowerCase().includes('pozitif')).length;
     const cdh1Count = cohort.filter(p => String(p.cdh1_germline || '').toLowerCase().includes('patojenik')).length;
@@ -442,21 +498,44 @@ export function PatientAnalytics() {
     const cldnCount = cohort.filter(p => String(p.cldn182 || '').toLowerCase().includes('pozitif')).length;
     const hpyloriCount = cohort.filter(p => String(p.h_pylori || '').toLowerCase().includes('pozitif')).length;
     const stage4Count = cohort.filter(p => String(p.m_stage || '').toLowerCase().includes('m1')).length;
+    const n = cohort.length;
 
     return {
-      count: cohort.length,
-      avgAge,
-      her2Rate: Math.round((her2Count / cohort.length) * 100),
-      cdh1Rate: Math.round((cdh1Count / cohort.length) * 100),
-      msiRate: Math.round((msiCount / cohort.length) * 100),
-      cldnRate: Math.round((cldnCount / cohort.length) * 100),
-      hpyloriRate: Math.round((hpyloriCount / cohort.length) * 100),
-      stage4Rate: Math.round((stage4Count / cohort.length) * 100)
+      count: n,
+      avgAge, ageSD, ageN: ages.length,
+      her2Rate: n ? Math.round((her2Count / n) * 100) : 0, her2Count,
+      cdh1Rate: n ? Math.round((cdh1Count / n) * 100) : 0, cdh1Count,
+      msiRate: n ? Math.round((msiCount / n) * 100) : 0, msiCount,
+      cldnRate: n ? Math.round((cldnCount / n) * 100) : 0, cldnCount,
+      hpyloriRate: n ? Math.round((hpyloriCount / n) * 100) : 0, hpyloriCount,
+      stage4Rate: n ? Math.round((stage4Count / n) * 100) : 0, stage4Count
     };
   };
 
   const statsA = useMemo(() => calcCohortStats(cohortA), [cohortA]);
   const statsB = useMemo(() => calcCohortStats(cohortB), [cohortB]);
+
+  // Significance of the Group A vs Group B differences shown alongside each metric.
+  const comparisonPValues = useMemo(() => {
+    const posNeg = (countA: number, countB: number) => chiSquare2x2(countA, statsA.count - countA, countB, statsB.count - countB);
+    return {
+      age: twoSampleZTestMeans(statsA.avgAge, statsA.ageSD, statsA.ageN, statsB.avgAge, statsB.ageSD, statsB.ageN),
+      cdh1: posNeg(statsA.cdh1Count, statsB.cdh1Count),
+      her2: posNeg(statsA.her2Count, statsB.her2Count),
+      msi: posNeg(statsA.msiCount, statsB.msiCount),
+      stage4: posNeg(statsA.stage4Count, statsB.stage4Count)
+    };
+  }, [statsA, statsB]);
+
+  const PValueBadge = ({ p }: { p: number | null }) => {
+    if (p === null) return <span className="text-[10px] text-slate-400 font-medium">n/a</span>;
+    const sig = p < 0.05;
+    return (
+      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${sig ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+        p={p < 0.001 ? '<0.001' : p.toFixed(3)}{sig ? ' *' : ''}
+      </span>
+    );
+  };
 
   // Overall Filtered Stats
   const filteredStats = useMemo(() => {
@@ -779,6 +858,8 @@ export function PatientAnalytics() {
                 {rules.map((rule, idx) => {
                   const targetField = fields.find(f => f.id === rule.fieldId);
                   const hasSelectOptions = targetField && (targetField.type === 'select' || targetField.type === 'multiselect') && targetField.options;
+                  const isNumericField = targetField && (targetField.type === 'number' || rule.fieldId === 'patient_age');
+                  const [betweenMin = '', betweenMax = ''] = rule.value.split(',');
 
                   return (
                     <div
@@ -826,12 +907,31 @@ export function PatientAnalytics() {
                         <option value="not_contains">İçermez</option>
                         <option value="greater_than">Büyüktür (&gt;)</option>
                         <option value="less_than">Küçüktür (&lt;)</option>
+                        {isNumericField && <option value="between">Aralıkta (min–max)</option>}
                         <option value="is_filled">Veri Girilmiş (Dolu)</option>
                         <option value="is_empty">Veri Yok (Boş)</option>
                       </select>
 
                       {/* Value Input or Select Dropdown */}
-                      {rule.operator !== 'is_filled' && rule.operator !== 'is_empty' && (
+                      {rule.operator === 'between' ? (
+                        <div className="flex-1 min-w-[180px] flex items-center gap-2">
+                          <input
+                            type="number"
+                            placeholder="min"
+                            value={betweenMin}
+                            onChange={e => updateRule(rule.id, { value: `${e.target.value},${betweenMax}` })}
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <span className="text-slate-400 text-xs shrink-0">–</span>
+                          <input
+                            type="number"
+                            placeholder="max"
+                            value={betweenMax}
+                            onChange={e => updateRule(rule.id, { value: `${betweenMin},${e.target.value}` })}
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      ) : rule.operator !== 'is_filled' && rule.operator !== 'is_empty' && (
                         hasSelectOptions ? (
                           <select
                             value={rule.value}
@@ -1322,6 +1422,24 @@ export function PatientAnalytics() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Statistical significance of A vs B differences */}
+            <div className="border-t border-slate-100 pt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity className="w-4 h-4 text-slate-400" />
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">İstatistiksel Anlamlılık (Grup A vs Grup B)</span>
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-700">
+                <div className="flex items-center gap-1.5">Yaş: <PValueBadge p={comparisonPValues.age} /></div>
+                <div className="flex items-center gap-1.5">CDH1: <PValueBadge p={comparisonPValues.cdh1} /></div>
+                <div className="flex items-center gap-1.5">HER2: <PValueBadge p={comparisonPValues.her2} /></div>
+                <div className="flex items-center gap-1.5">MSI-H: <PValueBadge p={comparisonPValues.msi} /></div>
+                <div className="flex items-center gap-1.5">Evre IV: <PValueBadge p={comparisonPValues.stage4} /></div>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Yaş için iki örneklemli z-testi (yaklaşık); oranlar için Yates düzeltmeli ki-kare testi kullanılmıştır. p&lt;0.05 (*) istatistiksel olarak anlamlı kabul edilir; küçük gruplarda (n&lt;20) yorumlarken temkinli olun. "n/a": karşılaştırma için yeterli veri yok.
+              </p>
             </div>
           </div>
         </div>
