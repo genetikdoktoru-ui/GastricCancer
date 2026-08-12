@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { defaultFormFields, FormField } from '../lib/schema';
@@ -31,7 +31,12 @@ import {
   Target,
   Activity,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Mic,
+  Square,
+  Loader2,
+  Table as TableIcon,
+  X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -104,6 +109,16 @@ export function PatientAnalytics() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [aiResponse, setAiResponse] = useState<{ explanation?: string; clinicalInsight?: string } | null>(null);
+  const [aiDisplayFields, setAiDisplayFields] = useState<string[]>([]);
+
+  // Voice dictation state (for the AI query box — supports long recordings)
+  const [isDictating, setIsDictating] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [dictationError, setDictationError] = useState('');
+  const [dictationSeconds, setDictationSeconds] = useState(0);
+  const dictationRecorder = useRef<MediaRecorder | null>(null);
+  const dictationChunks = useRef<BlobPart[]>([]);
+  const dictationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Filter Rules state
   const [rules, setRules] = useState<FilterRule[]>([]);
@@ -178,6 +193,7 @@ export function PatientAnalytics() {
     setAiLoading(true);
     setAiError('');
     setAiResponse(null);
+    setAiDisplayFields([]);
 
     try {
       const res = await fetch('/api/gemini/query-assistant', {
@@ -209,11 +225,90 @@ export function PatientAnalytics() {
           logicalOp: f.logicalOp === 'OR' ? 'OR' : 'AND'
         }));
         setRules(formattedRules);
+      } else {
+        setRules([]);
+      }
+
+      if (Array.isArray(data.displayFields)) {
+        const validIds = new Set(fields.map(f => f.id));
+        setAiDisplayFields(data.displayFields.filter((id: string) => validIds.has(id)));
       }
     } catch (err: any) {
       setAiError(err.message || 'Yapay zeka sorgusu işlenirken hata oluştu.');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Voice Dictation for the AI Query Box (long recordings supported —
+  // no artificial time limit; MediaRecorder keeps capturing until stopped)
+  // -------------------------------------------------------------
+  const startDictation = async () => {
+    setDictationError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      dictationRecorder.current = new MediaRecorder(stream);
+      dictationChunks.current = [];
+
+      dictationRecorder.current.ondataavailable = (e) => {
+        if (e.data.size > 0) dictationChunks.current.push(e.data);
+      };
+      dictationRecorder.current.onstop = processDictationAudio;
+      dictationRecorder.current.start();
+      setIsDictating(true);
+      setDictationSeconds(0);
+      dictationTimer.current = setInterval(() => setDictationSeconds(s => s + 1), 1000);
+    } catch (err) {
+      console.error('Microphone error:', err);
+      setDictationError('Mikrofon erişimi reddedildi veya kullanılamıyor.');
+    }
+  };
+
+  const stopDictation = () => {
+    if (dictationRecorder.current && isDictating) {
+      dictationRecorder.current.stop();
+      dictationRecorder.current.stream.getTracks().forEach(track => track.stop());
+      setIsDictating(false);
+    }
+    if (dictationTimer.current) {
+      clearInterval(dictationTimer.current);
+      dictationTimer.current = null;
+    }
+  };
+
+  const processDictationAudio = async () => {
+    if (dictationChunks.current.length === 0) return;
+    setIsTranscribing(true);
+    setDictationError('');
+    try {
+      const audioBlob = new Blob(dictationChunks.current, { type: 'audio/webm' });
+      const base64Audio: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      const response = await fetch('/api/gemini/transcribe-audio', {
+        method: 'POST',
+        headers: getGeminiHeaders(),
+        body: JSON.stringify({ audioData: base64Audio, mimeType: 'audio/webm' })
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Ses dikte edilirken bir hata oluştu.');
+      }
+
+      const result = await response.json();
+      if (result.text) {
+        setAiPrompt(prev => (prev.trim() ? `${prev.trim()} ${result.text}` : result.text));
+      }
+    } catch (err: any) {
+      setDictationError(err.message || 'Ses dikte edilirken bir hata oluştu.');
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
@@ -663,32 +758,65 @@ export function PatientAnalytics() {
             </div>
 
             <div className="flex flex-col md:flex-row items-stretch gap-2">
-              <input
-                type="text"
-                placeholder="Örn: 50 yaş altı, CDH1 mutasyonu olan ve Lauren tipi diffüz hastaları filtrele..."
+              <textarea
+                placeholder="Örn: 40 yaş altı ve cinsiyeti kadın olan olguların tümör lokalizasyon verilerini listele... (yazın veya mikrofonla dikte edin)"
                 value={aiPrompt}
                 onChange={e => setAiPrompt(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAiQuery()}
-                className="flex-1 px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm text-slate-800 shadow-xs"
+                rows={2}
+                className="flex-1 px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm text-slate-800 shadow-xs resize-y"
               />
-              <button
-                onClick={() => handleAiQuery()}
-                disabled={aiLoading || !aiPrompt.trim()}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 shrink-0"
-              >
-                {aiLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Sorgulanıyor...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>AI ile Filtrele</span>
-                  </>
-                )}
-              </button>
+              <div className="flex md:flex-col gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={isDictating ? stopDictation : startDictation}
+                  disabled={isTranscribing}
+                  title={isDictating ? 'Dikteyi durdur' : 'Sesli dikte et (uzun kayıtlar desteklenir)'}
+                  className={`flex-1 px-4 py-3 rounded-xl font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 ${
+                    isDictating ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' :
+                    isTranscribing ? 'bg-slate-300 text-slate-500' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {isTranscribing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : isDictating ? (
+                    <>
+                      <Square className="w-4 h-4" />
+                      <span>{Math.floor(dictationSeconds / 60)}:{String(dictationSeconds % 60).padStart(2, '0')}</span>
+                    </>
+                  ) : (
+                    <Mic className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  onClick={() => handleAiQuery()}
+                  disabled={aiLoading || isTranscribing || !aiPrompt.trim()}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                >
+                  {aiLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Sorgulanıyor...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>AI ile Filtrele</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+            {isDictating && (
+              <p className="text-[11px] text-red-600 font-semibold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /> Dinliyor... istediğiniz kadar uzun konuşabilirsiniz, bitirince durdur'a basın.
+              </p>
+            )}
+            {isTranscribing && (
+              <p className="text-[11px] text-slate-500 font-semibold">Ses metne dönüştürülüyor, uzun kayıtlarda birkaç dakika sürebilir...</p>
+            )}
+            {dictationError && (
+              <p className="text-[11px] text-red-600 font-semibold">{dictationError}</p>
+            )}
 
             {/* Quick AI Suggestion Chips */}
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -743,6 +871,56 @@ export function PatientAnalytics() {
                   <p className="text-[11.5px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed italic">
                     💡 <strong>Klinik Genetik Notu:</strong> {aiResponse.clinicalInsight}
                   </p>
+                )}
+              </div>
+            )}
+
+            {/* AI-requested result table (e.g. "...listele" / "...tablo halinde listele") */}
+            {aiDisplayFields.length > 0 && (
+              <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-blue-800 font-bold text-xs">
+                    <TableIcon className="w-4 h-4" />
+                    Sonuç Tablosu ({filteredPatients.length} kayıt)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAiDisplayFields([])}
+                    className="text-slate-400 hover:text-slate-700 p-1"
+                    title="Tabloyu kapat"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {filteredPatients.length === 0 ? (
+                  <p className="p-4 text-xs text-slate-500">Bu sorguya uyan kayıt bulunamadı.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="text-left px-4 py-2 font-bold text-slate-600">Araştırma ID</th>
+                          {aiDisplayFields.map(fid => (
+                            <th key={fid} className="text-left px-4 py-2 font-bold text-slate-600">
+                              {fields.find(f => f.id === fid)?.label || fid}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredPatients.map(p => (
+                          <tr key={p.id} className="border-b border-slate-100 hover:bg-blue-50/40">
+                            <td className="px-4 py-2 font-semibold text-slate-800">{p.research_id || p.id}</td>
+                            {aiDisplayFields.map(fid => (
+                              <td key={fid} className="px-4 py-2 text-slate-700">
+                                {Array.isArray(p[fid]) ? p[fid].join(', ') : (p[fid] ?? <span className="text-slate-300">—</span>)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}

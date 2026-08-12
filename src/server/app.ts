@@ -148,6 +148,49 @@ app.post('/api/gemini/analyze-audio', async (req, res) => {
   }
 });
 
+// Plain speech-to-text transcription (no clinical field extraction) — used for
+// dictating natural-language database queries, including long recordings.
+app.post('/api/gemini/transcribe-audio', async (req, res) => {
+  try {
+    const { audioData, mimeType } = req.body;
+
+    if (!audioData) {
+      return res.status(400).json({ error: 'Ses verisi gereklidir.' });
+    }
+
+    const apiKey = getRequestApiKey(req);
+    if (!apiKey) {
+      return res.status(400).json({ error: 'GEMINI_API_KEY bulunamadı. Lütfen üst menüdeki "Gemini API Key" butonundan geçerli bir API anahtarı ekleyin.' });
+    }
+
+    const ai = createGeminiClient(apiKey);
+    const base64Audio = audioData.split(',')[1] || audioData;
+
+    const resultText = await generateGeminiContent(
+      ai,
+      [
+        {
+          role: 'user',
+          parts: [
+            { text: 'Bu ses kaydındaki Türkçe konuşmayı, hiçbir yorum veya ekleme yapmadan, sadece söylenen kelimelerin düz metin transkripsiyonu olarak yaz. Noktalama işaretlerini doğal konuşma akışına göre ekle. Sadece transkript metnini döndür, başka hiçbir şey yazma.' },
+            {
+              inlineData: {
+                mimeType: mimeType || 'audio/webm',
+                data: base64Audio,
+              }
+            }
+          ]
+        }
+      ],
+      {}
+    );
+
+    res.json({ text: resultText.trim() });
+  } catch (error: any) {
+    handleGeminiError(error, res);
+  }
+});
+
 // Gemini Proxy API for Images (Screenshots / Reports)
 app.post('/api/gemini/analyze-image', async (req, res) => {
   try {
@@ -423,10 +466,18 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
     1. Doktorun isteğini çözümleyerek, verilere uygulanacak filtre kurallarını ("filters") JSON dizisi olarak oluştur.
     2. Filtre kurallarında "fieldId", "operator", "value" ve "logicalOp" alanlarını kullan.
        - "fieldId": Yukarıdaki listedeki geçerli bir id olmalı (örn: "patient_age", "cdh1_germline", "lauren_classification", "her2_status", "cldn182", "msi_status", "h_pylori", "blood_type", "m_stage", "family_gc", "consanguinity" vb.).
-       - "operator": Şu değerlerden biri olmalı: "equals", "not_equals", "contains", "not_contains", "greater_than", "less_than", "is_filled", "is_empty", "in_list".
-       - "value": Aranacak değer (metin, sayı veya seçenek metni; örn "Patojenik (Pozitif)", "Diffüz", "50", "Pozitif", "M1").
+       - "operator": Şu değerlerden biri olmalı: "equals", "not_equals", "contains", "not_contains", "greater_than", "less_than", "between", "is_filled", "is_empty".
+       - "value": Aranacak değer (metin, sayı veya seçenek metni; örn "Patojenik (Pozitif)", "Diffüz", "50", "Pozitif", "M1"). "between" operatörü için değeri "min,max" formatında ver (örn: yaş 40 ile 50 arası → "40,50").
+       - Seçenek/kategori alanlarında (select tipi) "equals" yerine tercihen "contains" kullan ve seçeneğin sayısal ön ekini ("1 - ", "2 - " gibi) value'ya dahil etme, sadece anlamlı kelimeyi yaz (örn. cinsiyet için value: "Kadın", "equals" değil "contains"). Bu, verinin ön ekli veya ön eksiz kaydedilmiş olmasından bağımsız doğru eşleşme sağlar.
        - "logicalOp": "AND" veya "OR".
     3. Doktorun sorgusuna tıbbi ve klinik açıdan kısa, net bir uzman açıklaması ("explanation") ve tıbbi genetik değerlendirme notu ("clinicalInsight") ekle.
+    4. Eğer doktor belirli bir veriyi "listele", "göster", "tablo halinde ver", "hangi X'i var" gibi ifadelerle açıkça istiyorsa, hangi alan(lar)ın bir SONUÇ TABLOSU olarak gösterilmesini istediğini "displayFields" dizisine yukarıdaki fieldId listesinden 1-4 en ilgili id ile doldur (örn. "tümör lokalizasyon verilerini listele" → ["lokaliza"]; "tümör histolojilerini tablo halinde listele" → ["histoloji_who", "lauren_classification"]). Sorgu yalnızca bir hasta grubunu filtrelemek içinse (belirli bir alanı "listele" denmiyorsa) "displayFields" alanını boş dizi [] bırak.
+
+    Örnekler:
+    - "40 yaş altı ve cinsiyeti kadın olan olguların tümör lokalizasyon verilerini listele" →
+      filters: [{"fieldId":"patient_age","operator":"less_than","value":"40","logicalOp":"AND"},{"fieldId":"patient_gender","operator":"contains","value":"Kadın","logicalOp":"AND"}], displayFields: ["lokaliza"]
+    - "Tanı yaşı kırk ile elli yaş arası olan olguların tümör histolojilerini tablo halinde listele" →
+      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: ["histoloji_who"]
 
     Format (SADECE JSON):
     {
@@ -445,7 +496,8 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
           "value": "Patojenik (Pozitif)",
           "logicalOp": "AND"
         }
-      ]
+      ],
+      "displayFields": []
     }
     `;
 

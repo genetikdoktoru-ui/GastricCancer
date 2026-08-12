@@ -11,10 +11,10 @@ export function normalizeFieldValue(fieldKey: string, val: any, fieldObj?: FormF
   const strVal = String(val).trim();
   const lowerKey = fieldKey.toLowerCase();
 
-  // CİNSİYET
+  // CİNSİYET (schema.ts options: '1 - Erkek', '2 - Kadın')
   if (lowerKey === 'patient_gender' || lowerKey.includes('cinsiyet') || lowerKey.includes('cins')) {
-    if (strVal === '1') return 'Erkek';
-    if (strVal === '2') return 'Kadın';
+    if (strVal === '1') return '1 - Erkek';
+    if (strVal === '2') return '2 - Kadın';
   }
 
   // KİLO KAYBI / SİGARA (1:Yok, 2:Var, 3:Bilgi Yok)
