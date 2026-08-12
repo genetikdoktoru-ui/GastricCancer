@@ -39,48 +39,20 @@ import {
   X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-// Standard normal CDF (Abramowitz-Stegun approximation), used to derive p-values
-// for the chi-square (df=1) and z-test significance checks in the cohort comparison.
-function normalCDF(z: number): number {
-  const t = 1 / (1 + 0.2316419 * Math.abs(z));
-  const d = 0.3989423 * Math.exp((-z * z) / 2);
-  let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
-  if (z > 0) p = 1 - p;
-  return p;
-}
+import { chiSquareTest, welchTTest, welchTTestFromSummary, oneWayANOVA, pearsonCorrelation, stdDev, mean as avg } from '../lib/stats';
 
 // Two-proportion comparison via a Yates-corrected 2x2 chi-square test.
 // (a,b) = positive/negative counts in group A; (c,d) = positive/negative counts in group B.
 function chiSquare2x2(a: number, b: number, c: number, d: number): number | null {
-  const n = a + b + c + d;
-  const row1 = a + b, row2 = c + d, col1 = a + c, col2 = b + d;
-  if (n === 0 || row1 === 0 || row2 === 0 || col1 === 0 || col2 === 0) return null;
-  const expected = [(row1 * col1) / n, (row1 * col2) / n, (row2 * col1) / n, (row2 * col2) / n];
-  const observed = [a, b, c, d];
-  let chi2 = 0;
-  for (let i = 0; i < 4; i++) {
-    const diff = Math.max(0, Math.abs(observed[i] - expected[i]) - 0.5); // Yates continuity correction
-    chi2 += (diff * diff) / expected[i];
-  }
-  return 2 * (1 - normalCDF(Math.sqrt(chi2)));
+  const result = chiSquareTest([[a, b], [c, d]]);
+  return result ? result.p : null;
 }
 
-// Two-sample z-test for a difference in means (Welch-style standard error).
-// Treated as approximate (not a full t-distribution) — adequate for a quick
-// in-app significance check; small cohorts should be confirmed with formal stats.
+// Two-sample significance test for a difference in means, computed from summary
+// statistics (mean/sd/n per group) — exact Welch's t-distribution p-value.
 function twoSampleZTestMeans(mean1: number, sd1: number, n1: number, mean2: number, sd2: number, n2: number): number | null {
-  if (n1 < 2 || n2 < 2) return null;
-  const se = Math.sqrt((sd1 * sd1) / n1 + (sd2 * sd2) / n2);
-  if (se === 0) return null;
-  return 2 * (1 - normalCDF(Math.abs(mean1 - mean2) / se));
-}
-
-function stdDev(values: number[]): number {
-  if (values.length < 2) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance = values.reduce((a, v) => a + (v - mean) ** 2, 0) / (values.length - 1);
-  return Math.sqrt(variance);
+  const result = welchTTestFromSummary(mean1, sd1, n1, mean2, sd2, n2);
+  return result ? result.p : null;
 }
 
 export interface FilterRule {
@@ -110,6 +82,7 @@ export function PatientAnalytics() {
   const [aiError, setAiError] = useState('');
   const [aiResponse, setAiResponse] = useState<{ explanation?: string; clinicalInsight?: string } | null>(null);
   const [aiDisplayFields, setAiDisplayFields] = useState<string[]>([]);
+  const [aiAnalysisFields, setAiAnalysisFields] = useState<string[]>([]);
 
   // Voice dictation state (for the AI query box — supports long recordings)
   const [isDictating, setIsDictating] = useState(false);
@@ -194,6 +167,7 @@ export function PatientAnalytics() {
     setAiError('');
     setAiResponse(null);
     setAiDisplayFields([]);
+    setAiAnalysisFields([]);
 
     try {
       const res = await fetch('/api/gemini/query-assistant', {
@@ -229,9 +203,12 @@ export function PatientAnalytics() {
         setRules([]);
       }
 
+      const validIds = new Set(fields.map(f => f.id));
       if (Array.isArray(data.displayFields)) {
-        const validIds = new Set(fields.map(f => f.id));
         setAiDisplayFields(data.displayFields.filter((id: string) => validIds.has(id)));
+      }
+      if (Array.isArray(data.analysisFields)) {
+        setAiAnalysisFields(data.analysisFields.filter((id: string) => validIds.has(id)));
       }
     } catch (err: any) {
       setAiError(err.message || 'Yapay zeka sorgusu işlenirken hata oluştu.');
@@ -632,6 +609,208 @@ export function PatientAnalytics() {
     );
   };
 
+  // -------------------------------------------------------------
+  // Association Analysis Engine — real (not AI-guessed) statistical tests
+  // between 2+ variables the AI assistant (or the user, via the "İlişki
+  // Analizi" tool) selects. Auto-picks chi-square / Welch t-test / one-way
+  // ANOVA / Pearson correlation depending on each pair's field types.
+  // -------------------------------------------------------------
+  const CHART_COLORS = ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2'];
+
+  const getCategoryValue = (patient: any, fieldId: string): string | null => {
+    const raw = patient[fieldId];
+    if (raw === undefined || raw === null || raw === '') return null;
+    const str = String(raw);
+    if (/bilgi yok|bilinmiyor/i.test(str)) return null;
+    return str.replace(/^\d+(\.\d+)?\s*-\s*/, '').trim() || null;
+  };
+
+  const isNumericFieldType = (field: FormField | undefined, fieldId: string): boolean => {
+    if (fieldId === 'patient_age') return true;
+    return field?.type === 'number';
+  };
+
+  type AssocChart =
+    | { type: 'grouped-bar'; catsA: string[]; catsB: string[]; table: number[][] }
+    | { type: 'means-bar'; groups: { label: string; mean: number; n: number }[] }
+    | { type: 'scatter'; points: { x: number; y: number }[]; xLabel: string; yLabel: string };
+
+  interface AssocPairResult {
+    labelA: string; labelB: string; testName: string; n: number; p: number | null; statText: string; chart: AssocChart;
+  }
+
+  const runAssociationAnalysis = (patientsSubset: any[], fieldIds: string[]): AssocPairResult[] => {
+    const results: AssocPairResult[] = [];
+    for (let i = 0; i < fieldIds.length; i++) {
+      for (let j = i + 1; j < fieldIds.length; j++) {
+        const fa = fieldIds[i], fb = fieldIds[j];
+        const fieldA = fields.find(f => f.id === fa);
+        const fieldB = fields.find(f => f.id === fb);
+        const labelA = fieldA?.label || fa;
+        const labelB = fieldB?.label || fb;
+        const numA = isNumericFieldType(fieldA, fa);
+        const numB = isNumericFieldType(fieldB, fb);
+
+        if (!numA && !numB) {
+          // Categorical x Categorical -> chi-square test of independence
+          const rowMap = new Map<string, Map<string, number>>();
+          const catsA: string[] = [], catsB: string[] = [];
+          for (const p of patientsSubset) {
+            const a = getCategoryValue(p, fa), b = getCategoryValue(p, fb);
+            if (a === null || b === null) continue;
+            if (!catsA.includes(a)) catsA.push(a);
+            if (!catsB.includes(b)) catsB.push(b);
+            if (!rowMap.has(a)) rowMap.set(a, new Map());
+            const row = rowMap.get(a)!;
+            row.set(b, (row.get(b) || 0) + 1);
+          }
+          const cA = catsA.slice(0, 6), cB = catsB.slice(0, 6);
+          const table = cA.map(a => cB.map(b => rowMap.get(a)?.get(b) || 0));
+          const n = table.flat().reduce((x, y) => x + y, 0);
+          const test = cA.length >= 2 && cB.length >= 2 ? chiSquareTest(table) : null;
+          results.push({
+            labelA, labelB, n,
+            testName: test ? `Ki-kare${cA.length === 2 && cB.length === 2 ? ' (Yates düzeltmeli)' : ''}` : 'Ki-kare',
+            p: test?.p ?? null,
+            statText: test ? `χ²=${test.chi2.toFixed(2)}, df=${test.df}, n=${n}` : `Yetersiz veri (n=${n})`,
+            chart: { type: 'grouped-bar', catsA: cA, catsB: cB, table }
+          });
+        } else if (numA !== numB) {
+          // Categorical x Numeric -> Welch t-test (2 groups) or one-way ANOVA (3+ groups)
+          const catField = numA ? fb : fa, numField = numA ? fa : fb;
+          const catLabel = numA ? labelB : labelA, numLabel = numA ? labelA : labelB;
+          const groupsMap = new Map<string, number[]>();
+          for (const p of patientsSubset) {
+            const cat = getCategoryValue(p, catField);
+            const val = Number(p[numField]);
+            if (cat === null || isNaN(val)) continue;
+            if (!groupsMap.has(cat)) groupsMap.set(cat, []);
+            groupsMap.get(cat)!.push(val);
+          }
+          const entries = Array.from(groupsMap.entries()).filter(([, v]) => v.length >= 2).slice(0, 6);
+          const groups = entries.map(([label, values]) => ({ label, mean: avg(values), n: values.length }));
+          const n = entries.reduce((s, [, v]) => s + v.length, 0);
+          let p: number | null = null, testName = '', statText = `Yetersiz veri (n=${n})`;
+          if (entries.length === 2) {
+            const r = welchTTest(entries[0][1], entries[1][1]);
+            p = r?.p ?? null; testName = 'Welch t-testi';
+            if (r) statText = `t=${r.t.toFixed(2)}, df=${r.df.toFixed(1)}, n=${n}`;
+          } else if (entries.length > 2) {
+            const r = oneWayANOVA(entries.map(e => e[1]));
+            p = r?.p ?? null; testName = 'Tek yönlü ANOVA';
+            if (r) statText = `F=${r.f.toFixed(2)}, df=(${r.df1},${r.df2}), n=${n}`;
+          }
+          results.push({ labelA: numLabel, labelB: catLabel, testName: testName || 'Grup Karşılaştırması', n, p, statText, chart: { type: 'means-bar', groups } });
+        } else {
+          // Numeric x Numeric -> Pearson correlation
+          const points: { x: number; y: number }[] = [];
+          for (const p of patientsSubset) {
+            const x = Number(p[fa]), y = Number(p[fb]);
+            if (!isNaN(x) && !isNaN(y) && p[fa] !== '' && p[fb] !== '') points.push({ x, y });
+          }
+          const r = pearsonCorrelation(points.map(pt => pt.x), points.map(pt => pt.y));
+          results.push({
+            labelA, labelB, n: points.length, p: r?.p ?? null,
+            testName: 'Pearson Korelasyonu',
+            statText: r ? `r=${r.r.toFixed(3)}, n=${points.length}` : `Yetersiz veri (n=${points.length})`,
+            chart: { type: 'scatter', points, xLabel: labelA, yLabel: labelB }
+          });
+        }
+      }
+    }
+    return results;
+  };
+
+  const GroupedBarChart = ({ chart }: { chart: Extract<AssocChart, { type: 'grouped-bar' }> }) => (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-3 text-[10px]">
+        {chart.catsB.map((c, i) => (
+          <span key={c} className="flex items-center gap-1.5 font-semibold text-slate-600">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            {c}
+          </span>
+        ))}
+      </div>
+      {chart.catsA.map((a, rowIdx) => {
+        const rowTotal = chart.table[rowIdx].reduce((x, y) => x + y, 0);
+        return (
+          <div key={a} className="space-y-1">
+            <div className="flex justify-between text-[11px] font-semibold text-slate-700">
+              <span>{a}</span>
+              <span className="text-slate-400">n={rowTotal}</span>
+            </div>
+            <div className="flex h-6 rounded-md overflow-hidden border border-slate-200">
+              {chart.table[rowIdx].map((count, colIdx) => {
+                const pct = rowTotal > 0 ? (count / rowTotal) * 100 : 0;
+                if (pct === 0) return null;
+                return (
+                  <div
+                    key={colIdx}
+                    style={{ width: `${pct}%`, background: CHART_COLORS[colIdx % CHART_COLORS.length] }}
+                    className="flex items-center justify-center text-white text-[10px] font-bold"
+                    title={`${chart.catsB[colIdx]}: ${count} (%${pct.toFixed(0)})`}
+                  >
+                    {pct >= 12 ? `%${pct.toFixed(0)}` : ''}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const MeansBarChart = ({ chart }: { chart: Extract<AssocChart, { type: 'means-bar' }> }) => {
+    const maxMean = Math.max(...chart.groups.map(g => g.mean), 0.001);
+    return (
+      <div className="flex items-end gap-4 h-32 pt-2">
+        {chart.groups.map((g, i) => (
+          <div key={g.label} className="flex flex-col items-center gap-1 flex-1 h-full justify-end">
+            <span className="text-[10px] font-bold text-slate-700">{g.mean.toFixed(1)}</span>
+            <div
+              className="w-full rounded-t-md"
+              style={{ height: `${Math.max(4, (g.mean / maxMean) * 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
+            />
+            <span className="text-[10px] text-slate-600 font-semibold text-center leading-tight">{g.label}</span>
+            <span className="text-[9px] text-slate-400">n={g.n}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const ScatterChart = ({ chart }: { chart: Extract<AssocChart, { type: 'scatter' }> }) => {
+    const W = 280, H = 160, PAD = 28;
+    const xs = chart.points.map(p => p.x), ys = chart.points.map(p => p.y);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const sx = (x: number) => PAD + ((x - xMin) / ((xMax - xMin) || 1)) * (W - PAD * 1.5);
+    const sy = (y: number) => H - PAD - ((y - yMin) / ((yMax - yMin) || 1)) * (H - PAD * 1.5);
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40">
+        <line x1={PAD} y1={H - PAD} x2={W - 8} y2={H - PAD} stroke="#e2e8f0" strokeWidth={1} />
+        <line x1={PAD} y1={8} x2={PAD} y2={H - PAD} stroke="#e2e8f0" strokeWidth={1} />
+        <text x={W / 2} y={H - 4} fontSize={9} textAnchor="middle" fill="#64748b">{chart.xLabel}</text>
+        <text x={10} y={H / 2} fontSize={9} textAnchor="middle" fill="#64748b" transform={`rotate(-90, 10, ${H / 2})`}>{chart.yLabel}</text>
+        {chart.points.map((p, i) => (
+          <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={2.5} fill="#2563eb" fillOpacity={0.6} />
+        ))}
+      </svg>
+    );
+  };
+
+  const AssociationChart = ({ chart }: { chart: AssocChart }) => {
+    if (chart.type === 'grouped-bar') return <GroupedBarChart chart={chart} />;
+    if (chart.type === 'means-bar') return <MeansBarChart chart={chart} />;
+    return <ScatterChart chart={chart} />;
+  };
+
+  const associationResults = useMemo(() => {
+    if (aiAnalysisFields.length < 2) return [];
+    return runAssociationAnalysis(filteredPatients, aiAnalysisFields);
+  }, [filteredPatients, aiAnalysisFields, fields]);
+
   // Overall Filtered Stats
   const filteredStats = useMemo(() => {
     if (filteredPatients.length === 0) return { avgAge: 0, her2Pos: 0, msiHPos: 0, cdh1Pos: 0, cldnPos: 0, diffuseRate: 0 };
@@ -922,6 +1101,49 @@ export function PatientAnalytics() {
                     </table>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* AI-requested (or manually run) association / correlation analysis */}
+            {aiAnalysisFields.length >= 2 && (
+              <div className="bg-white rounded-xl border border-indigo-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-indigo-800 font-bold text-xs">
+                    <GitCompare className="w-4 h-4" />
+                    İlişki Analizi — {aiAnalysisFields.map(id => fields.find(f => f.id === id)?.label || id).join(' × ')} ({filteredPatients.length} kayıt)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAiAnalysisFields([])}
+                    className="text-slate-400 hover:text-slate-700 p-1"
+                    title="Analizi kapat"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="p-4 space-y-4">
+                  <p className="text-[11px] text-slate-500">
+                    Her değişken çifti için otomatik olarak uygun test seçildi (iki kategorik alan → ki-kare; kategorik + sayısal → t-testi/ANOVA; iki sayısal alan → Pearson korelasyonu). p&lt;0.05 istatistiksel olarak anlamlı kabul edilir. Küçük gruplarda (n&lt;20) yorumlarken temkinli olun.
+                  </p>
+                  {associationResults.length === 0 ? (
+                    <p className="text-xs text-slate-500">Analiz için yeterli veri bulunamadı.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {associationResults.map((r, idx) => (
+                        <div key={idx} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-bold text-slate-800">{r.labelA} × {r.labelB}</div>
+                              <div className="text-[10px] text-slate-500">{r.testName} — {r.statText}</div>
+                            </div>
+                            <PValueBadge p={r.p} />
+                          </div>
+                          <AssociationChart chart={r.chart} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

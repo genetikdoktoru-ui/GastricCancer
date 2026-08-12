@@ -472,12 +472,15 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
        - "logicalOp": "AND" veya "OR".
     3. Doktorun sorgusuna tıbbi ve klinik açıdan kısa, net bir uzman açıklaması ("explanation") ve tıbbi genetik değerlendirme notu ("clinicalInsight") ekle.
     4. Eğer doktor belirli bir veriyi "listele", "göster", "tablo halinde ver", "hangi X'i var" gibi ifadelerle açıkça istiyorsa, hangi alan(lar)ın bir SONUÇ TABLOSU olarak gösterilmesini istediğini "displayFields" dizisine yukarıdaki fieldId listesinden 1-4 en ilgili id ile doldur (örn. "tümör lokalizasyon verilerini listele" → ["lokaliza"]; "tümör histolojilerini tablo halinde listele" → ["histoloji_who", "lauren_classification"]). Sorgu yalnızca bir hasta grubunu filtrelemek içinse (belirli bir alanı "listele" denmiyorsa) "displayFields" alanını boş dizi [] bırak.
+    5. ÖNEMLİ — Eğer doktor iki veya daha fazla değişken ARASINDAKİ ilişkiyi/bağlantıyı sorguluyorsa ve/veya bunu "istatistiksel olarak test et", "anlamlı mı", "korelasyon var mı", "grafiksel göster/çıktı ver" gibi ifadelerle istiyorsa: SEN İSTATİSTİKSEL HESAPLAMA YAPMA (p-değeri hesaplamayı deneme, sayı uydurma) — bunun yerine hangi alanların birbiriyle karşılaştırılacağını belirleyip "analysisFields" dizisine ilgili fieldId'leri (2-5 adet) yaz. Gerçek istatistiksel test (ki-kare/t-testi/ANOVA/korelasyon) ve grafikler uygulama tarafından otomatik hesaplanıp gösterilecek; sen sadece hangi değişkenlerin karşılaştırılacağını belirle ve "explanation"da bu analizi başlattığını belirt. Sorgu ilişki/korelasyon testi istemiyorsa "analysisFields" alanını boş dizi [] bırak.
 
     Örnekler:
     - "40 yaş altı ve cinsiyeti kadın olan olguların tümör lokalizasyon verilerini listele" →
-      filters: [{"fieldId":"patient_age","operator":"less_than","value":"40","logicalOp":"AND"},{"fieldId":"patient_gender","operator":"contains","value":"Kadın","logicalOp":"AND"}], displayFields: ["lokaliza"]
+      filters: [{"fieldId":"patient_age","operator":"less_than","value":"40","logicalOp":"AND"},{"fieldId":"patient_gender","operator":"contains","value":"Kadın","logicalOp":"AND"}], displayFields: ["lokaliza"], analysisFields: []
     - "Tanı yaşı kırk ile elli yaş arası olan olguların tümör histolojilerini tablo halinde listele" →
-      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: ["histoloji_who"]
+      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: ["histoloji_who"], analysisFields: []
+    - "40 ila 50 yaş arasındaki hastaların metastaz durumları ile cinsiyetleri ve nüks durumlarını incele. Bu değişkenler arasında bir anlamlı bir bağlantı var mı, bunu istatistiksel olarak test et ve bana grafiksel olarak da çıktılar ver." →
+      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: [], analysisFields: ["metastaz_var_mi", "patient_gender", "relaps"]
 
     Format (SADECE JSON):
     {
@@ -497,7 +500,8 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
           "logicalOp": "AND"
         }
       ],
-      "displayFields": []
+      "displayFields": [],
+      "analysisFields": []
     }
     `;
 
