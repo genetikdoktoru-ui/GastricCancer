@@ -43,7 +43,20 @@ service cloud.firestore {
     
     match /form_schemas/{document} {
       allow read, write: if isAdmin();
-      allow read: if true; 
+      allow read: if true;
+    }
+
+    // Active form schema: every signed-in user (not just admins) must be able to
+    // read this to load the patient form; only admins may edit it.
+    match /config/form_schema {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Research ID counter: any signed-in user creating a patient needs to read
+    // and atomically increment this.
+    match /config/patient_counter {
+      allow read, write: if request.auth != null;
     }
     
     match /audit_logs/{document} {
