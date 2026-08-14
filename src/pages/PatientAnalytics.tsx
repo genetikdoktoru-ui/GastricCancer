@@ -83,6 +83,8 @@ export function PatientAnalytics() {
   const [aiResponse, setAiResponse] = useState<{ explanation?: string; clinicalInsight?: string } | null>(null);
   const [aiDisplayFields, setAiDisplayFields] = useState<string[]>([]);
   const [aiAnalysisFields, setAiAnalysisFields] = useState<string[]>([]);
+  const [aiDistribution, setAiDistribution] = useState<{ fieldId: string; binWidth: number | null } | null>(null);
+  const [aiUnsupportedReason, setAiUnsupportedReason] = useState<string>('');
 
   // Voice dictation state (for the AI query box — supports long recordings)
   const [isDictating, setIsDictating] = useState(false);
@@ -168,6 +170,8 @@ export function PatientAnalytics() {
     setAiResponse(null);
     setAiDisplayFields([]);
     setAiAnalysisFields([]);
+    setAiDistribution(null);
+    setAiUnsupportedReason('');
 
     try {
       const res = await fetch('/api/gemini/query-assistant', {
@@ -204,11 +208,33 @@ export function PatientAnalytics() {
       }
 
       const validIds = new Set(fields.map(f => f.id));
+      let gotDisplay = false, gotAnalysis = false, gotDistribution = false;
       if (Array.isArray(data.displayFields)) {
-        setAiDisplayFields(data.displayFields.filter((id: string) => validIds.has(id)));
+        const valid = data.displayFields.filter((id: string) => validIds.has(id));
+        setAiDisplayFields(valid);
+        gotDisplay = valid.length > 0;
       }
       if (Array.isArray(data.analysisFields)) {
-        setAiAnalysisFields(data.analysisFields.filter((id: string) => validIds.has(id)));
+        const valid = data.analysisFields.filter((id: string) => validIds.has(id));
+        setAiAnalysisFields(valid);
+        gotAnalysis = valid.length >= 2;
+      }
+      if (data.distribution && validIds.has(data.distribution.fieldId)) {
+        setAiDistribution({ fieldId: data.distribution.fieldId, binWidth: data.distribution.binWidth ?? null });
+        gotDistribution = true;
+      }
+
+      // Safety net: if the assistant explicitly flagged the request as unsupported,
+      // or silently produced nothing at all (e.g. a malformed/too-narrow response),
+      // always surface a concrete reason instead of leaving the user with no answer.
+      if (data.unsupported) {
+        setAiUnsupportedReason(data.unsupportedReason || 'Bu istek şu anki sürümde desteklenmiyor.');
+      } else if (!(data.filters?.length > 0) && !gotDisplay && !gotAnalysis && !gotDistribution) {
+        setAiUnsupportedReason(
+          data.analysisFields?.length === 1
+            ? 'İlişki analizi için en az 2 değişken gerekiyor; sorgunuzdan yalnızca bir değişken çıkarabildim. Lütfen karşılaştırmak istediğiniz ikinci değişkeni de belirtin.'
+            : 'Sorgunuzu bir filtre, sonuç tablosu, tek değişken dağılımı veya değişkenler arası ilişki analizine dönüştüremedim. Lütfen isteğinizi biraz daha farklı ifade edin (örn. hangi alan(lar) ve ne tür bir çıktı istediğinizi belirterek).'
+        );
       }
     } catch (err: any) {
       setAiError(err.message || 'Yapay zeka sorgusu işlenirken hata oluştu.');
@@ -811,6 +837,64 @@ export function PatientAnalytics() {
     return runAssociationAnalysis(filteredPatients, aiAnalysisFields);
   }, [filteredPatients, aiAnalysisFields, fields]);
 
+  // -------------------------------------------------------------
+  // Single-variable distribution (histogram / category counts) — e.g.
+  // "yaş değişkenine göre 10'ar yıllık dekadlara göre dağılım göster".
+  // -------------------------------------------------------------
+  interface DistributionBucket { label: string; count: number; }
+
+  const distributionResult = useMemo((): { field: string; buckets: DistributionBucket[]; n: number } | null => {
+    if (!aiDistribution) return null;
+    const { fieldId, binWidth } = aiDistribution;
+    const field = fields.find(f => f.id === fieldId);
+    const label = field?.label || fieldId;
+
+    if (isNumericFieldType(field, fieldId)) {
+      const values = filteredPatients
+        .map(p => Number(p[fieldId]))
+        .filter(v => !isNaN(v) && isFinite(v));
+      if (values.length === 0) return { field: label, buckets: [], n: 0 };
+      const width = binWidth && binWidth > 0 ? binWidth : Math.max(1, Math.ceil((Math.max(...values) - Math.min(...values)) / 8));
+      const min = Math.floor(Math.min(...values) / width) * width;
+      const max = Math.ceil((Math.max(...values) + 1) / width) * width;
+      const buckets: DistributionBucket[] = [];
+      for (let start = min; start < max; start += width) {
+        const end = start + width - 1;
+        const count = values.filter(v => v >= start && v < start + width).length;
+        buckets.push({ label: width === 1 ? `${start}` : `${start}-${end}`, count });
+      }
+      return { field: label, buckets, n: values.length };
+    } else {
+      const counts = new Map<string, number>();
+      for (const p of filteredPatients) {
+        const cat = getCategoryValue(p, fieldId);
+        if (cat === null) continue;
+        counts.set(cat, (counts.get(cat) || 0) + 1);
+      }
+      const buckets = Array.from(counts.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
+      return { field: label, buckets, n: buckets.reduce((s, b) => s + b.count, 0) };
+    }
+  }, [aiDistribution, filteredPatients, fields]);
+
+  const DistributionChart = ({ buckets }: { buckets: DistributionBucket[] }) => {
+    const maxCount = Math.max(...buckets.map(b => b.count), 1);
+    return (
+      <div className="flex items-end gap-2 h-48 pt-2 overflow-x-auto">
+        {buckets.map((b) => (
+          <div key={b.label} className="flex flex-col items-center gap-1 min-w-[44px] h-full justify-end">
+            <span className="text-[10px] font-bold text-slate-700">{b.count}</span>
+            <div
+              className="w-full rounded-t-md bg-blue-600"
+              style={{ height: `${Math.max(2, (b.count / maxCount) * 100)}%` }}
+              title={`${b.label}: ${b.count} hasta`}
+            />
+            <span className="text-[10px] text-slate-600 font-semibold text-center leading-tight whitespace-nowrap">{b.label}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // Overall Filtered Stats
   const filteredStats = useMemo(() => {
     if (filteredPatients.length === 0) return { avgAge: 0, her2Pos: 0, msiHPos: 0, cdh1Pos: 0, cldnPos: 0, diffuseRate: 0 };
@@ -1037,6 +1121,17 @@ export function PatientAnalytics() {
               </div>
             )}
 
+            {/* Explicit "couldn't fulfill this" notice — never leave the user with silence */}
+            {aiUnsupportedReason && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Bu isteği tam olarak gerçekleştiremedim</div>
+                  <div className="mt-0.5">{aiUnsupportedReason}</div>
+                </div>
+              </div>
+            )}
+
             {aiResponse && (
               <div className="p-4 bg-white rounded-xl border border-blue-200 shadow-sm space-y-2">
                 <div className="flex items-center gap-2 text-blue-700 font-bold text-xs">
@@ -1142,6 +1237,33 @@ export function PatientAnalytics() {
                         </div>
                       ))}
                     </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* AI-requested single-variable distribution (histogram / category counts) */}
+            {aiDistribution && distributionResult && (
+              <div className="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                    <BarChart3 className="w-4 h-4" />
+                    Dağılım — {distributionResult.field} ({distributionResult.n} kayıt)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAiDistribution(null)}
+                    className="text-slate-400 hover:text-slate-700 p-1"
+                    title="Dağılımı kapat"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="p-4">
+                  {distributionResult.buckets.length === 0 ? (
+                    <p className="text-xs text-slate-500">Bu alan için veri bulunamadı.</p>
+                  ) : (
+                    <DistributionChart buckets={distributionResult.buckets} />
                   )}
                 </div>
               </div>

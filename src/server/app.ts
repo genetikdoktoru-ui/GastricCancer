@@ -473,14 +473,18 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
     3. Doktorun sorgusuna tıbbi ve klinik açıdan kısa, net bir uzman açıklaması ("explanation") ve tıbbi genetik değerlendirme notu ("clinicalInsight") ekle.
     4. Eğer doktor belirli bir veriyi "listele", "göster", "tablo halinde ver", "hangi X'i var" gibi ifadelerle açıkça istiyorsa, hangi alan(lar)ın bir SONUÇ TABLOSU olarak gösterilmesini istediğini "displayFields" dizisine yukarıdaki fieldId listesinden 1-4 en ilgili id ile doldur (örn. "tümör lokalizasyon verilerini listele" → ["lokaliza"]; "tümör histolojilerini tablo halinde listele" → ["histoloji_who", "lauren_classification"]). Sorgu yalnızca bir hasta grubunu filtrelemek içinse (belirli bir alanı "listele" denmiyorsa) "displayFields" alanını boş dizi [] bırak.
     5. ÖNEMLİ — Eğer doktor iki veya daha fazla değişken ARASINDAKİ ilişkiyi/bağlantıyı sorguluyorsa ve/veya bunu "istatistiksel olarak test et", "anlamlı mı", "korelasyon var mı", "grafiksel göster/çıktı ver" gibi ifadelerle istiyorsa: SEN İSTATİSTİKSEL HESAPLAMA YAPMA (p-değeri hesaplamayı deneme, sayı uydurma) — bunun yerine hangi alanların birbiriyle karşılaştırılacağını belirleyip "analysisFields" dizisine ilgili fieldId'leri (2-5 adet) yaz. Gerçek istatistiksel test (ki-kare/t-testi/ANOVA/korelasyon) ve grafikler uygulama tarafından otomatik hesaplanıp gösterilecek; sen sadece hangi değişkenlerin karşılaştırılacağını belirle ve "explanation"da bu analizi başlattığını belirt. Sorgu ilişki/korelasyon testi istemiyorsa "analysisFields" alanını boş dizi [] bırak.
+    6. ÖNEMLİ — Eğer doktor TEK bir değişkenin DAĞILIMINI istiyorsa (örn. "yaş dağılımını göster", "10'ar yıllık dekadlara göre dağılım", "evrelere göre dağılım grafiği", "kaç hastada X var, grafik ver") — bunu "distribution" nesnesine {"fieldId": "...", "binWidth": sayı_veya_null} olarak koy. "binWidth" sadece sayısal alanlar (örn. patient_age) için ve kullanıcı özellikle bir aralık belirtirse doldur (örn. "10'ar yıllık dekadlar" → binWidth: 10, "5 yıllık aralıklar" → binWidth: 5); belirtilmezse null bırak. SEN HİSTOGRAM HESAPLAMA — sadece hangi alanın dağılımının isteneceğini belirle, gruplama ve grafik uygulama tarafından hesaplanacak. Tek değişken dağılımı istenmiyorsa "distribution" alanını null bırak.
+    7. ÖNEMLİ — Eğer doktorun isteği yukarıdaki hiçbir kategoriye (filtre / tablo / ilişki analizi / dağılım) UYMUYORSA veya istenen alan(lar) mevcut Form Saha listesinde YOKSA: "unsupported" alanını true yap ve "unsupportedReason" alanına, doktorun anlayacağı şekilde Türkçe olarak NEDEN bu isteği karşılayamadığını kısaca yaz (örn. "Bu veri alanı veritabanında henüz tanımlı değil.", "Bu tür bir istek şu anki sürümde desteklenmiyor — sadece filtreleme, tablo listeleme, tek değişken dağılımı ve iki+ değişken arası ilişki testi yapılabiliyor."). Bu durumda "filters", "displayFields", "analysisFields" boş, "distribution" null olmalı. Emin değilsen veya kısmen karşılayabiliyorsan "unsupported": false yap ve elinden geleni yap.
 
     Örnekler:
     - "40 yaş altı ve cinsiyeti kadın olan olguların tümör lokalizasyon verilerini listele" →
-      filters: [{"fieldId":"patient_age","operator":"less_than","value":"40","logicalOp":"AND"},{"fieldId":"patient_gender","operator":"contains","value":"Kadın","logicalOp":"AND"}], displayFields: ["lokaliza"], analysisFields: []
+      filters: [{"fieldId":"patient_age","operator":"less_than","value":"40","logicalOp":"AND"},{"fieldId":"patient_gender","operator":"contains","value":"Kadın","logicalOp":"AND"}], displayFields: ["lokaliza"], analysisFields: [], distribution: null, unsupported: false
     - "Tanı yaşı kırk ile elli yaş arası olan olguların tümör histolojilerini tablo halinde listele" →
-      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: ["histoloji_who"], analysisFields: []
+      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: ["histoloji_who"], analysisFields: [], distribution: null, unsupported: false
     - "40 ila 50 yaş arasındaki hastaların metastaz durumları ile cinsiyetleri ve nüks durumlarını incele. Bu değişkenler arasında bir anlamlı bir bağlantı var mı, bunu istatistiksel olarak test et ve bana grafiksel olarak da çıktılar ver." →
-      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: [], analysisFields: ["metastaz_var_mi", "patient_gender", "relaps"]
+      filters: [{"fieldId":"patient_age","operator":"between","value":"40,50","logicalOp":"AND"}], displayFields: [], analysisFields: ["metastaz_var_mi", "patient_gender", "relaps"], distribution: null, unsupported: false
+    - "Tüm veritabanındaki hastaların yaş değişkenine göre 10'ar yıllık yaş aralıklarına (dekadlara) göre dağılım analizi ve grafiksel olarak göster" →
+      filters: [], displayFields: [], analysisFields: [], distribution: {"fieldId": "patient_age", "binWidth": 10}, unsupported: false
 
     Format (SADECE JSON):
     {
@@ -501,7 +505,10 @@ app.post('/api/gemini/query-assistant', async (req, res) => {
         }
       ],
       "displayFields": [],
-      "analysisFields": []
+      "analysisFields": [],
+      "distribution": null,
+      "unsupported": false,
+      "unsupportedReason": ""
     }
     `;
 
