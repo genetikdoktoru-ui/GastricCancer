@@ -47,7 +47,7 @@ export function AuditLogs() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Activity className="w-6 h-6 text-indigo-600" />
@@ -57,12 +57,12 @@ export function AuditLogs() {
             Sistemdeki tüm erişim, değişiklik ve veri aktarım işlemleri güvenlik amacıyla kayıt altına alınmaktadır.
           </p>
         </div>
-        <div className="relative">
+        <div className="relative w-full sm:w-72 shrink-0">
           <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             placeholder="Kullanıcı, işlem veya dosya ara..."
-            className="pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-72 outline-none"
+            className="pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full outline-none"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -72,8 +72,8 @@ export function AuditLogs() {
       {loading ? (
         <div className="text-slate-500">Yükleniyor...</div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <table className="w-full text-left text-sm">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left text-sm min-w-[720px]">
             <thead className="bg-slate-50 text-slate-700 font-medium border-b border-slate-200">
               <tr>
                 <th className="px-6 py-4">Tarih / Saat</th>
