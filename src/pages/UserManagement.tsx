@@ -1,3 +1,11 @@
+// UserManagement.tsx — Admin user CRUD (system_users) and password reset.
+//
+// exports: UserManagement
+// used_by: src/App.tsx → App (route)
+// rules:   create users through the secondary Firebase app so the admin stays signed in; every role change must go through saveUserRole so system_users/{username}.role and user_roles/{firebaseEmail} (read by auth-helpers.ts) stay in sync
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+//          claude-code | anthropic | 2026-10-15 | fix-user-roles | role picker on create, role change in user table, user_roles kept in sync on reset/delete
+
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updatePassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -7,9 +15,28 @@ import { logAudit } from '../lib/audit';
 import { UserPlus, User as UserIcon, ShieldAlert, Loader2, Key, Users, Copy, Check } from 'lucide-react';
 import { getFirebasePassword } from '../lib/auth-helpers';
 
+type UserRole = 'user' | 'doctor' | 'admin';
+
+const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
+  { value: 'user', label: 'Araştırmacı' },
+  { value: 'doctor', label: 'Doktor' },
+  { value: 'admin', label: 'Yönetici (Admin)' },
+];
+
+/**
+ * Writes a user's role to both places the app uses.
+ * Rules:   getCurrentUserRole() and firestore.rules read user_roles/{firebaseEmail};
+ *          the user table reads system_users/{username}.role — both must always match.
+ */
+async function saveUserRole(usernameLower: string, firebaseEmail: string, role: UserRole) {
+  await setDoc(doc(db, 'user_roles', firebaseEmail), { role, username: usernameLower });
+  await setDoc(doc(db, 'system_users', usernameLower), { role }, { merge: true });
+}
+
 export function UserManagement() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('user');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -90,14 +117,15 @@ export function UserManagement() {
       await setDoc(doc(db, 'system_users', usernameLower), {
         username: usernameLower,
         firebaseEmail: firebaseEmail,
-        role: 'user',
+        role: newUserRole,
         createdAt: new Date().toISOString()
       });
+      await saveUserRole(usernameLower, firebaseEmail, newUserRole);
 
       setSuccess(`Kullanıcı başarıyla oluşturuldu (${usernameLower}). Aşağıdaki bilgileri kopyalayıp kullanıcıya iletebilirsiniz.`);
       
       // Log the audit
-      await logAudit('OLUŞTURMA', 'KİMLİK_KAYDI', usernameLower, 'Yeni sistem kullanıcısı yetkilendirildi');
+      await logAudit('OLUŞTURMA', 'KİMLİK_KAYDI', usernameLower, `Yeni sistem kullanıcısı yetkilendirildi (rol: ${newUserRole})`);
       
       await loadUsers();
     } catch (err: any) {
@@ -151,6 +179,11 @@ export function UserManagement() {
         firebaseEmail: newFirebaseEmail,
         updatedAt: new Date().toISOString()
       });
+      // The new login email needs the same role; the old email must lose it.
+      await saveUserRole(usernameLower, newFirebaseEmail, (userDoc.role as UserRole) || 'user');
+      if (userDoc.firebaseEmail && userDoc.firebaseEmail !== newFirebaseEmail) {
+        await deleteDoc(doc(db, 'user_roles', userDoc.firebaseEmail));
+      }
 
       alert(`${usernameLower} için şifre başarıyla güncellendi. Yeni şifre: ${resetPassword}`);
       setResetUsername('');
@@ -171,13 +204,37 @@ export function UserManagement() {
     }
     if (confirm(`${usernameToDelete} kullanıcısını sistemden tamamen silmek istediğinize emin misiniz?`)) {
       try {
+        const userDoc = users.find(u => u.username === usernameToDelete);
         await deleteDoc(doc(db, 'system_users', usernameToDelete));
+        if (userDoc?.firebaseEmail) {
+          await deleteDoc(doc(db, 'user_roles', userDoc.firebaseEmail));
+        }
         await logAudit('SİLME', 'KİMLİK_KAYDI', usernameToDelete, 'Kullanıcı hesabı silindi');
         await loadUsers();
       } catch (err) {
         console.error(err);
         alert("Silme işlemi başarısız.");
       }
+    }
+  };
+
+  const handleChangeRole = async (usernameToChange: string, role: UserRole) => {
+    const userDoc = users.find(u => u.username === usernameToChange);
+    if (!userDoc?.firebaseEmail) {
+      alert('Bu kullanıcının giriş e-postası bulunamadı; rol değiştirilemedi.');
+      return;
+    }
+    if (userDoc.firebaseEmail === auth.currentUser?.email) {
+      alert('Kendi rolünüzü değiştiremezsiniz; başka bir yönetici değiştirmelidir.');
+      return;
+    }
+    try {
+      await saveUserRole(usernameToChange, userDoc.firebaseEmail, role);
+      await logAudit('GÜNCELLEME', 'KİMLİK_KAYDI', usernameToChange, `Kullanıcı rolü değiştirildi: ${role}`);
+      await loadUsers();
+    } catch (err) {
+      console.error(err);
+      alert('Rol değiştirilemedi.');
     }
   };
 
@@ -257,6 +314,21 @@ export function UserManagement() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Rol
+              </label>
+              <select
+                className="block w-full sm:text-sm border-slate-300 rounded-lg py-2.5 px-3 border outline-none focus:ring-blue-500 focus:border-blue-500"
+                value={newUserRole}
+                onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+              >
+                {ROLE_OPTIONS.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
             {error && (
               <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-100">
                 {error}
@@ -284,6 +356,7 @@ export function UserManagement() {
                     onClick={() => {
                       setUsername('');
                       setPassword('');
+                      setNewUserRole('user');
                       setSuccess('');
                     }}
                     className="px-3 py-1.5 bg-white text-slate-700 border border-slate-300 rounded-md font-medium hover:bg-slate-50 transition-colors flex-1 text-center"
@@ -329,7 +402,21 @@ export function UserManagement() {
                 {users.map(u => (
                   <tr key={u.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2 font-medium text-slate-900">{u.username}</td>
-                    <td className="px-4 py-2 text-slate-500 text-xs uppercase">{u.role}</td>
+                    <td className="px-4 py-2 text-slate-500 text-xs">
+                      {u.username === 'admin' ? (
+                        <span className="uppercase">{u.role}</span>
+                      ) : (
+                        <select
+                          className="text-xs border-slate-200 rounded-md py-1 px-2 border outline-none bg-white"
+                          value={u.role || 'user'}
+                          onChange={(e) => handleChangeRole(u.username, e.target.value as UserRole)}
+                        >
+                          {ROLE_OPTIONS.map(r => (
+                            <option key={r.value} value={r.value}>{r.label}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       {u.username !== 'admin' && (
                         <button 

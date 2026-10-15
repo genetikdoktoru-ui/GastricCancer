@@ -1,3 +1,11 @@
+// schema.ts — Default patient form schema: ~180 fields, clinical + genetics questionnaire.
+//
+// exports: FieldType | FormField | defaultFormFields | mergeWithDefaultSchema(storedFields) -> FormField[]
+// used_by: src/lib/codebook.ts | src/pages/FormBuilder.tsx → loadData (mergeWithDefaultSchema) | src/pages/PatientForm.tsx | src/pages/PatientAnalytics.tsx | src/pages/ExcelImport.tsx
+// rules:   field id = Firestore key in patients docs — never rename/remove an id without migrating data; '(X)' prefix in a label records the source Excel column letter (B–DZ); select option text is stored verbatim, so changing option wording orphans existing values
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+//          claude-code | anthropic | 2026-10-15 | fix-schema-overwrite | added mergeWithDefaultSchema (shared by PatientForm + FormBuilder)
+
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'multiselect';
 
@@ -197,3 +205,24 @@ export const defaultFormFields: FormField[] = [
   { id: 'mat_alinma_sekli', label: '(DY) Materyal Alınma Şekli', type: 'text', category: 'Dosya ve Rapor Bilgileri', active: true },
   { id: 'mat_alindigi_organ', label: '(DZ) Materyalin Alındığı Organ', type: 'text', category: 'Dosya ve Rapor Bilgileri', active: true },
 ];
+
+/**
+ * Merges a schema stored in Firestore (config/form_schema) with defaultFormFields.
+ * Rules:   keeps stored order, `active` flags and custom fields (e.g. added by Excel import);
+ *          label/type/options always come from defaultFormFields; fields added to
+ *          defaultFormFields after the schema was saved are appended so they never go missing.
+ */
+export function mergeWithDefaultSchema(storedFields: FormField[]): FormField[] {
+  const mergedFields = storedFields.map(field => {
+    const defaultField = defaultFormFields.find(d => d.id === field.id);
+    return defaultField
+      ? { ...field, label: defaultField.label, type: defaultField.type, options: defaultField.options }
+      : field;
+  });
+  defaultFormFields.forEach(defaultField => {
+    if (!mergedFields.some(f => f.id === defaultField.id)) {
+      mergedFields.push(defaultField);
+    }
+  });
+  return mergedFields;
+}

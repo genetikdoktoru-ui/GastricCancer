@@ -1,3 +1,10 @@
+// IdentityRegistry.tsx — Real identity ↔ GST research ID mapping (Hasta Kodlama).
+//
+// exports: IdentityRegistry
+// used_by: src/App.tsx → App (route)
+// rules:   patient_identities holds real names/national IDs keyed by researchId — keep identity data out of the patients collection and out of Gemini prompts
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { collection, getDocs, doc, runTransaction, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';

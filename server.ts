@@ -1,3 +1,10 @@
+// server.ts — Local dev/prod server on port 3000; Vite middleware in dev.
+//
+// exports: none
+// used_by: none (npm run dev / npm start)
+// rules:   only for local runs — production traffic is Firebase Hosting + functions/index.js
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import express from 'express';
 import path from 'path';
 import { app } from './src/server/app.js';

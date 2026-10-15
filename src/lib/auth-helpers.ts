@@ -1,3 +1,10 @@
+// auth-helpers.ts — Username→Firebase email mapping, password suffix, role lookup.
+//
+// exports: getFirebaseEmail(username) -> Promise<string> | getFirebasePassword(pw) -> string | getCurrentUserRole() -> Promise<string>
+// used_by: src/pages/Login.tsx | src/pages/UserManagement.tsx | src/components/Layout.tsx | src/lib/driveSync.ts | src/pages/{Dashboard,PatientList,PatientAnalytics,IdentityRegistry,Backup}.tsx
+// rules:   getFirebasePassword's fixed suffix must stay identical in Login and UserManagement or every existing login breaks; usernames without '@' become <username>@gastrogen.local; role comes from user_roles/{email}, default 'user'
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 

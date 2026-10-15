@@ -1,3 +1,11 @@
+// google-drive.ts — Google Drive OAuth + spreadsheet listing/download helpers.
+//
+// exports: initGoogleDriveAuth | signInWithGoogleDrive | get/setCachedDriveAccessToken | DriveFileItem | extractDriveFileId | listGoogleDriveSpreadsheets | getDriveFileMetadata | downloadDriveFileAsArrayBuffer
+// used_by: none
+// rules:   none
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+//          message: "no file imports this module yet — Backup.tsx does its own Drive sign-in; reuse or delete before adding a third copy"
+
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
 

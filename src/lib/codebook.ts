@@ -1,3 +1,10 @@
+// codebook.ts — Maps numeric Excel codebook values (1/2/3) to human-readable labels.
+//
+// exports: normalizeFieldValue(key, val, field?) -> any | normalizePatientRecord(data) -> record | normalizeAllExistingRecordsInFirestore(onProgress?) -> Promise<number>
+// used_by: src/pages/PatientForm.tsx | src/pages/PatientList.tsx → handleBatchNormalize | src/pages/ExcelImport.tsx
+// rules:   normalizePatientRecord must skip identity/meta keys (id, research_id, patient_name, identity_number, createdAt, createdBy…); normalizeAll writes in batches of 100 (Firestore batch limit is 500) and is admin-only in practice
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { defaultFormFields, FormField } from './schema';
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';

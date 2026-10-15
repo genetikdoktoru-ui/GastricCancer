@@ -1,3 +1,10 @@
+// driveSync.ts — Gathers patients/identities/schemas and backs them up to Google Drive.
+//
+// exports: SyncDataPayload | gatherApplicationData() | syncDataToGoogleDrive(token, name?) | fetchLatestDriveBackup(token)
+// used_by: src/pages/Backup.tsx
+// rules:   non-admins only export their own createdBy records; backups contain real identities (patient_identities) — treat files as sensitive
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { getCurrentUserRole } from './auth-helpers';

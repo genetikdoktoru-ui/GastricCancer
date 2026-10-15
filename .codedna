@@ -1,0 +1,60 @@
+# .codedna — Project structure manifest (CodeDNA Level 0)
+project: GastricCancer (GastroGen Tıbbi Portalı)
+description: Gastric cancer genetics research registry — React + Firebase web app with Gemini-assisted data entry
+mode: semi
+max_agent_sessions: 5
+
+packages:
+  src/:
+    purpose: "React SPA entry (main.tsx) and route table / auth gate (App.tsx)"
+    key_files: [main.tsx, App.tsx]
+    depends_on: [src/components/, src/pages/, src/lib/]
+
+  src/components/:
+    purpose: "App shell — sidebar navigation, role badge, Gemini API key modal"
+    key_files: [Layout.tsx]
+    depends_on: [src/lib/]
+
+  src/pages/:
+    purpose: "One component per route: patient form, list, analytics, Excel import, identity registry, users, audit, backup"
+    key_files: [PatientForm.tsx, ExcelImport.tsx, PatientAnalytics.tsx, IdentityRegistry.tsx]
+    depends_on: [src/lib/, src/server/ (over HTTP /api/gemini/*)]
+
+  src/lib/:
+    purpose: "Firebase setup, form schema, codebook normalization, auth/role helpers, audit log, ID generator, Excel decoding, Drive backup"
+    key_files: [firebase.ts, schema.ts, codebook.ts, auth-helpers.ts, audit.ts, idGenerator.ts]
+
+  src/server/:
+    purpose: "Express API proxying Gemini (audio, image, text, URL, document, query assistant)"
+    key_files: [app.ts]
+
+  functions/:
+    purpose: "Firebase Cloud Function 'api' wrapping src/server/app.ts (bundled to functions/lib/app.cjs)"
+    key_files: [index.js, package.json]
+    depends_on: [src/server/]
+
+  (root):
+    purpose: "Config (firebase.json, firestore.rules, vite.config.ts), dev server (server.ts). The fix_*.cjs / update_*.js / part_*.txt files are one-off historical scripts, not part of the app"
+    key_files: [server.ts, firebase.json, firestore.rules, package.json]
+
+agent_sessions:
+  - agent: claude-code
+    provider: anthropic
+    date: 2026-10-15
+    task: "Fix form schema overwrite and unsynced user roles"
+    changed: [src/lib/schema.ts, src/pages/PatientForm.tsx, src/pages/FormBuilder.tsx, src/pages/UserManagement.tsx]
+    message: >
+      PatientForm now seeds config/form_schema only when missing; schema merge shared via
+      mergeWithDefaultSchema. UserManagement writes roles through saveUserRole (system_users +
+      user_roles). Verified with in-memory Firebase stubs + Playwright. Remaining: firestore.rules
+      blocks non-admins from config/* (form schema read, patient counter).
+  - agent: claude-code
+    provider: anthropic
+    date: 2026-10-15
+    task: "Set up persistent memory: CodeDNA headers, CLAUDE.md, HANDOFF.md"
+    changed: [.codedna, CLAUDE.md, HANDOFF.md, src/**/*.ts(x), server.ts, functions/index.js]
+    message: >
+      Annotated all 27 app source files (semi mode). Found PatientForm.tsx force-writes
+      defaultFormFields to config/form_schema on every open, wiping FormBuilder choices;
+      and roles are read from user_roles/{email} but nothing in src/ writes that collection.
+      Both recorded in HANDOFF.md as open issues, not fixed.

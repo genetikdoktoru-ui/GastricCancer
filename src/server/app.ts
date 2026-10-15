@@ -1,3 +1,10 @@
+// app.ts — Express API: Gemini proxy routes for audio, image, text, URL, document, query.
+//
+// exports: app
+// used_by: server.ts → startServer | functions/index.js (bundled to functions/lib/app.cjs by npm run build:functions)
+// rules:   all routes live under /api/gemini/* (Firebase Hosting rewrites /api/** to the 'api' function); must run as both ESM (tsx dev) and CJS (esbuild) — keep the requireFunc pattern; API key = x-gemini-api-key header, else env GEMINI_API_KEY; new npm deps must also go into functions/package.json
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';

@@ -1,3 +1,10 @@
+// ExcelImport.tsx — Imports Excel columns B–DZ into patients, mapping headers to schema fields.
+//
+// exports: ExcelImport
+// used_by: src/App.tsx → App (route)
+// rules:   uploads go through readWorkbookFromBuffer; Turkish letters are folded to ASCII before toLowerCase() when matching headers; a header maps to a field by textToFieldId(title), exact label match, or a '[X]' label prefix
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useRef, ChangeEvent, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { doc, getDoc, setDoc, collection, doc as firestoreDoc, writeBatch } from 'firebase/firestore';

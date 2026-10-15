@@ -1,3 +1,10 @@
+// PatientList.tsx — Research form list with search, delete and batch codebook normalization.
+//
+// exports: PatientList
+// used_by: src/App.tsx → App (route)
+// rules:   records are passed through normalizePatientRecord before display; batch normalize rewrites Firestore and needs confirm()
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { collection, getDocs, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';

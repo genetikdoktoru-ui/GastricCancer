@@ -1,3 +1,10 @@
+// firebase.ts — Single Firebase app, named Firestore DB and Auth instances.
+//
+// exports: firebaseConfig | app | db | auth
+// used_by: src/App.tsx | src/components/Layout.tsx | src/lib/{audit,auth-helpers,codebook,driveSync,google-drive,idGenerator}.ts | src/pages/*.tsx
+// rules:   Firestore is the NAMED database firestoreDatabaseId (not '(default)'); always import db/auth from here — only UserManagement.tsx may create a secondary app (to add users without signing out the admin)
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';

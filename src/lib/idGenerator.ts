@@ -1,3 +1,10 @@
+// idGenerator.ts — Atomic GST-NNN research ID generator.
+//
+// exports: generateNextResearchId() -> Promise<string>
+// used_by: src/pages/PatientForm.tsx | src/pages/IdentityRegistry.tsx
+// rules:   IDs come only from the config/patient_counter transaction — never build GST- IDs elsewhere
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from './firebase';
 

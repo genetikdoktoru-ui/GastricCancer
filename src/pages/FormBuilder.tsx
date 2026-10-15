@@ -1,5 +1,13 @@
+// FormBuilder.tsx — Admin UI to toggle/reorder form fields and save schema templates.
+//
+// exports: FormBuilder
+// used_by: src/App.tsx → App (route)
+// rules:   saves to config/form_schema (read by PatientForm.tsx) and form_schemas templates; load through mergeWithDefaultSchema
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+//          claude-code | anthropic | 2026-10-15 | fix-schema-overwrite | schema merge moved to lib/schema.ts
+
 import { useState, useEffect } from 'react';
-import { defaultFormFields, FormField } from '../lib/schema';
+import { defaultFormFields, FormField, mergeWithDefaultSchema } from '../lib/schema';
 import { doc, getDoc, setDoc, collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Check, X, Save, Copy, RotateCcw } from 'lucide-react';
@@ -18,21 +26,7 @@ export function FormBuilder() {
         const docRef = doc(db, 'config', 'form_schema');
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          const dbFields = snap.data().fields;
-          const mergedFields = dbFields.map((field: any) => {
-            const df = defaultFormFields.find(d => d.id === field.id);
-            if (df) {
-              return { ...field, label: df.label, type: df.type, options: df.options };
-            }
-            return field;
-          });
-          // Also add any new fields from defaultFormFields that are not in DB
-          defaultFormFields.forEach(df => {
-            if (!mergedFields.find((f: any) => f.id === df.id)) {
-              mergedFields.push(df);
-            }
-          });
-          setFields(mergedFields);
+          setFields(mergeWithDefaultSchema(snap.data().fields));
         }
 
         const templatesSnap = await getDocs(collection(db, 'form_schemas'));

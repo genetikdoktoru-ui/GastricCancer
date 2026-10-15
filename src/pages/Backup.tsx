@@ -1,3 +1,10 @@
+// Backup.tsx — Local JSON and Google Drive backup/restore.
+//
+// exports: Backup
+// used_by: src/App.tsx → App (route)
+// rules:   restore writes with setDoc over existing docs — non-admins may only restore their own createdBy records
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { collection, getDocs, query, where, doc, setDoc } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
