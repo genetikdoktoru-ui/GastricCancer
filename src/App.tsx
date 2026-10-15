@@ -1,3 +1,10 @@
+// App.tsx — Auth gate + React Router route table for all pages.
+//
+// exports: App (default)
+// used_by: src/main.tsx → render
+// rules:   unauthenticated users only ever see <Login/>; every new page needs a <Route> here and a navItems entry in components/Layout.tsx
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0

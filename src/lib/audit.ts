@@ -1,3 +1,10 @@
+// audit.ts — Writes KVKK audit trail entries to the audit_logs collection.
+//
+// exports: AuditAction | ResourceType | logAudit(action, resourceType, resourceId?, details?)
+// used_by: src/lib/driveSync.ts | src/pages/{PatientForm,PatientList,PatientAnalytics,ExcelImport,IdentityRegistry,UserManagement,Backup}.tsx
+// rules:   logAudit never throws and is a no-op when signed out; audit_logs is create-only for non-admins (firestore.rules) — never update/delete entries
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { addDoc, collection } from 'firebase/firestore';
 import { db, auth } from './firebase';
 

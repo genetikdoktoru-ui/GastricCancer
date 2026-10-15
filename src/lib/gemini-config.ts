@@ -1,3 +1,10 @@
+// gemini-config.ts — Stores the user's own Gemini API key and builds request headers.
+//
+// exports: getStoredGeminiApiKey() -> string | setStoredGeminiApiKey(key) | getGeminiHeaders() -> headers
+// used_by: src/components/Layout.tsx | src/pages/PatientForm.tsx | src/pages/PatientAnalytics.tsx
+// rules:   key lives only in browser localStorage and travels as the x-gemini-api-key header; the server falls back to GEMINI_API_KEY when absent
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 /**
  * Helper to manage custom Gemini API Key in client storage and build API request headers
  */

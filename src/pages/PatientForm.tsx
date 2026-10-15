@@ -1,3 +1,11 @@
+// PatientForm.tsx — Patient form: dynamic schema fields, AI auto-fill, voice, report conflict highlight.
+//
+// exports: PatientForm
+// used_by: src/App.tsx → App (route) (/patients/new, /patients/:id)
+// rules:   fields come from config/form_schema merged with defaultFormFields (labels/types/options always from schema.ts); in the 'rapor' field *x* (Excel: y) marks a value conflicting with structured data and renders amber
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+//          message: "loadData() force-writes defaultFormFields to config/form_schema on every open, which wipes FormBuilder active/inactive choices on the next load — confirm intent before relying on FormBuilder"
+
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { defaultFormFields, FormField } from '../lib/schema';

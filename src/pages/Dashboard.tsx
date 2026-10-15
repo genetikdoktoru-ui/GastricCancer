@@ -1,3 +1,10 @@
+// Dashboard.tsx — Summary stat cards (patients, family history, <50 age, CDH1).
+//
+// exports: Dashboard
+// used_by: src/App.tsx → App (route)
+// rules:   non-admins see only their own createdBy patients
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';

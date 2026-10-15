@@ -1,3 +1,10 @@
+// FormBuilder.tsx — Admin UI to toggle/reorder form fields and save schema templates.
+//
+// exports: FormBuilder
+// used_by: src/App.tsx → App (route)
+// rules:   saves to config/form_schema and form_schemas templates — see PatientForm.tsx message about the forced schema overwrite
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { defaultFormFields, FormField } from '../lib/schema';
 import { doc, getDoc, setDoc, collection, getDocs, addDoc } from 'firebase/firestore';

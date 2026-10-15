@@ -1,3 +1,10 @@
+// schema.ts — Default patient form schema: ~180 fields, clinical + genetics questionnaire.
+//
+// exports: FieldType | FormField | defaultFormFields
+// used_by: src/lib/codebook.ts | src/pages/FormBuilder.tsx | src/pages/PatientForm.tsx | src/pages/PatientAnalytics.tsx | src/pages/ExcelImport.tsx
+// rules:   field id = Firestore key in patients docs — never rename/remove an id without migrating data; '(X)' prefix in a label records the source Excel column letter (B–DZ); select option text is stored verbatim, so changing option wording orphans existing values
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'multiselect';
 

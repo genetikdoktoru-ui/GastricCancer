@@ -1,3 +1,10 @@
+// Login.tsx — Username/password login and first-admin bootstrap.
+//
+// exports: Login
+// used_by: src/App.tsx → App (route)
+// rules:   must log in via getFirebaseEmail + getFirebasePassword — never pass the raw password to Firebase
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';

@@ -1,3 +1,10 @@
+// AuditLogs.tsx — Read-only viewer for the audit_logs collection.
+//
+// exports: AuditLogs
+// used_by: src/App.tsx → App (route)
+// rules:   read-only — audit entries must never be edited or deleted from the UI
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';

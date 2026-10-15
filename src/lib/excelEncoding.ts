@@ -1,3 +1,10 @@
+// excelEncoding.ts — Reads uploaded Excel/CSV, re-decoding Turkish Windows-1254 CSVs.
+//
+// exports: readWorkbookFromBuffer(buffer, fileName, mime?) -> XLSX.WorkBook
+// used_by: src/pages/ExcelImport.tsx
+// rules:   always parse user uploads through this function, never XLSX.read directly — otherwise İ/Ş/Ğ/Ü/Ö/Ç in CSVs get corrupted
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import * as XLSX from 'xlsx';
 
 /**

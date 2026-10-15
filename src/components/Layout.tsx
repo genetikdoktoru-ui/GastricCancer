@@ -1,3 +1,10 @@
+// Layout.tsx — App shell: sidebar navigation, role badge, Gemini API key modal.
+//
+// exports: Layout
+// used_by: src/App.tsx → App (parent route)
+// rules:   navItems order/paths must match the routes in App.tsx; role label comes from getCurrentUserRole() (admin | doctor | else Araştırmacı)
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Activity, Users, FilePlus, Settings, Shield, Database, LogOut, ClipboardList, UserCog, Dna, User as UserIcon, Key, Sparkles, X, CheckCircle, FileSpreadsheet, Menu } from 'lucide-react';
 import { clsx } from 'clsx';

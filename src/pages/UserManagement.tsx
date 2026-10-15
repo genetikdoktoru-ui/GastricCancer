@@ -1,3 +1,10 @@
+// UserManagement.tsx — Admin user CRUD (system_users) and password reset.
+//
+// exports: UserManagement
+// used_by: src/App.tsx → App (route)
+// rules:   create users through the secondary Firebase app so the admin stays signed in; new users get system_users/{username}.role='user', but the app reads roles from user_roles/{email} (auth-helpers.ts), which nothing in src/ writes
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updatePassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';

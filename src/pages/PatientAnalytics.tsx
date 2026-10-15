@@ -1,3 +1,10 @@
+// PatientAnalytics.tsx — Cohort filtering, presets and Gemini natural-language query assistant.
+//
+// exports: FilterRule | SavedPreset | PatientAnalytics
+// used_by: src/App.tsx → App (route)
+// rules:   data sent to /api/gemini/query-assistant must stay pseudonymized (research IDs, no identity fields)
+// agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
