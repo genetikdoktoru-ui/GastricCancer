@@ -2,13 +2,13 @@
 //
 // exports: PatientForm
 // used_by: src/App.tsx → App (route) (/patients/new, /patients/:id)
-// rules:   fields come from config/form_schema merged with defaultFormFields (labels/types/options always from schema.ts); in the 'rapor' field *x* (Excel: y) marks a value conflicting with structured data and renders amber
+// rules:   fields come from config/form_schema via mergeWithDefaultSchema (labels/types/options always from schema.ts); never overwrite a stored schema here — only seed it when missing; in the 'rapor' field *x* (Excel: y) marks a value conflicting with structured data and renders amber
 // agent:   claude-code | anthropic | 2026-10-15 | codedna-init | initial CodeDNA annotation
-//          message: "loadData() force-writes defaultFormFields to config/form_schema on every open, which wipes FormBuilder active/inactive choices on the next load — confirm intent before relying on FormBuilder"
+//          claude-code | anthropic | 2026-10-15 | fix-schema-overwrite | removed forced schema overwrite that wiped Form Özelleştir choices
 
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { defaultFormFields, FormField } from '../lib/schema';
+import { defaultFormFields, FormField, mergeWithDefaultSchema } from '../lib/schema';
 import { normalizePatientRecord, normalizeFieldValue } from '../lib/codebook';
 import { collection, doc, getDoc, setDoc, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
@@ -69,24 +69,20 @@ export function PatientForm() {
   useEffect(() => {
     async function loadData() {
       try {
-        // Load schema
+        // Load schema. Never overwrite a stored schema here — it holds Form Özelleştir choices.
+        // Rules: a failed schema read (e.g. no permission) must not block loading the patient.
         const schemaRef = doc(db, 'config', 'form_schema');
-        const schemaSnap = await getDoc(schemaRef);
-        let activeFields = defaultFormFields;
-        // FORCE UPDATE SCHEMA TO DB ONCE
+        let activeFields: FormField[] = defaultFormFields;
         try {
-          await setDoc(doc(db, 'config', 'form_schema'), { fields: defaultFormFields });
-          console.log("Forced update of schema to db");
-        } catch(e) {}
-
-        if (schemaSnap.exists()) {
-          activeFields = schemaSnap.data().fields.map((field: any) => {
-            const df = defaultFormFields.find(d => d.id === field.id);
-            if (df) {
-              return { ...field, label: df.label, type: df.type, options: df.options };
-            }
-            return field;
-          });
+          const schemaSnap = await getDoc(schemaRef);
+          if (schemaSnap.exists() && Array.isArray(schemaSnap.data().fields)) {
+            activeFields = mergeWithDefaultSchema(schemaSnap.data().fields);
+          } else {
+            // First run: seed the stored schema once (only admins have write access).
+            await setDoc(schemaRef, { fields: defaultFormFields }).catch(() => {});
+          }
+        } catch (schemaErr) {
+          console.warn('Form şeması okunamadı, varsayılan şema kullanılıyor.', schemaErr);
         }
         // Filter only active fields
         const visibleFields = activeFields.filter((f: FormField) => f.active);

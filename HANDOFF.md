@@ -12,14 +12,22 @@ _Last updated: 2026-10-15 (claude-code session). Update this file at the end of 
 - Persistent memory set up: `CLAUDE.md`, this file, `.codedna` manifest and CodeDNA headers
   on all 27 app source files (mode: semi).
 
+## Fixed in PR #7 (user approved)
+- **Form customization overwrite:** PatientForm no longer rewrites `config/form_schema`;
+  it only seeds it when missing. Both PatientForm and FormBuilder load via
+  `mergeWithDefaultSchema` (`src/lib/schema.ts`). Verified in demo mode (old code reproduced
+  the bug, new code keeps the inactive flag).
+- **Roles:** Kullanıcı Yönetimi now has a role picker (Araştırmacı / Doktor / Yönetici) on
+  create and a role dropdown per user; `saveUserRole` writes both `system_users` and
+  `user_roles/{firebaseEmail}`; password reset moves the role to the new login email and
+  delete removes it. Users created before this fix have no `user_roles` doc until an admin
+  picks a role for them in the table.
+
 ## Open issues (found, not fixed — ask the user before changing)
-1. **Form customization is overwritten.** `src/pages/PatientForm.tsx` `loadData()` writes
-   `defaultFormFields` to `config/form_schema` on every form open, so active/inactive choices
-   saved in Form Özelleştir (`FormBuilder.tsx`) are lost on the next load.
-2. **Roles are never written by the app.** `getCurrentUserRole()` reads `user_roles/{email}`,
-   but `UserManagement.tsx` only writes `system_users/{username}` with `role: 'user'`.
-   Admin rights currently depend on `user_roles` docs created by the old root scripts or
-   the hardcoded admin emails in `firestore.rules`.
+1. **Non-admins can't read/write `config/*`** (`firestore.rules` catch-all is admin-only):
+   doctors/researchers see the default form (not the customized one) and
+   `generateNextResearchId()` (config/patient_counter) fails for them. Needs a rules change.
+2. Admin rights for older accounts still rely on hardcoded emails in `firestore.rules`.
 3. `src/lib/google-drive.ts` is not imported anywhere (Backup.tsx has its own Drive sign-in).
 4. Root folder clutter: one-off scripts/notes from AI Studio (`fix_*.cjs`, `update_*.js`,
    `part_*.txt`, `mide.mht`, `temp_file.xlsx`, …) could be archived or deleted.
@@ -29,8 +37,8 @@ _Last updated: 2026-10-15 (claude-code session). Update this file at the end of 
    the ones this project doesn't need (claude.ai → Settings → Plugins).
 
 ## Next steps (proposed, not yet approved)
-- Decide and fix issues 1 and 2 (likely: only seed `config/form_schema` when missing; write
-  `user_roles/{email}` when an admin creates or edits a user).
+- Firestore rules: allow signed-in users to read `config/form_schema` and update
+  `config/patient_counter`; user must deploy rules.
 - Clean up the root folder and rewrite README.
 
 ## Notes

@@ -41,6 +41,16 @@ agent_sessions:
   - agent: claude-code
     provider: anthropic
     date: 2026-10-15
+    task: "Fix form schema overwrite and unsynced user roles"
+    changed: [src/lib/schema.ts, src/pages/PatientForm.tsx, src/pages/FormBuilder.tsx, src/pages/UserManagement.tsx]
+    message: >
+      PatientForm now seeds config/form_schema only when missing; schema merge shared via
+      mergeWithDefaultSchema. UserManagement writes roles through saveUserRole (system_users +
+      user_roles). Verified with in-memory Firebase stubs + Playwright. Remaining: firestore.rules
+      blocks non-admins from config/* (form schema read, patient counter).
+  - agent: claude-code
+    provider: anthropic
+    date: 2026-10-15
     task: "Set up persistent memory: CodeDNA headers, CLAUDE.md, HANDOFF.md"
     changed: [.codedna, CLAUDE.md, HANDOFF.md, src/**/*.ts(x), server.ts, functions/index.js]
     message: >
